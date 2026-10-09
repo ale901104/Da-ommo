@@ -17,4 +17,8 @@ export const movimientosIniciales: {
   tipo: string;
   categoria: 'physical' | 'special';
   poder: number;
+  statChange?: {
+    stat: 'atk' | 'def' | 'spa' | 'spd' | 'spe';
+    stages: number;
+  };
 }[];

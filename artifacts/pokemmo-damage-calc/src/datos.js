@@ -11,6 +11,7 @@ export const movimientosIniciales = [
   { id: 'bullet-punch', nombre: 'Puño Bala', tipo: 'steel', categoria: 'physical', poder: 40 },
   { id: 'stone-edge', nombre: 'Roca Afilada', tipo: 'rock', categoria: 'physical', poder: 100 },
   { id: 'crunch', nombre: 'Triturar', tipo: 'dark', categoria: 'physical', poder: 80 },
+  { id: 'leaf-storm', nombre: 'Lluevehojas', tipo: 'grass', categoria: 'special', poder: 130, statChange: { stat: 'spa', stages: -2 } },
   { id: 'flamethrower', nombre: 'Lanzallamas', tipo: 'fire', categoria: 'special', poder: 90 },
   { id: 'surf', nombre: 'Surf', tipo: 'water', categoria: 'special', poder: 90 },
   { id: 'ice-beam', nombre: 'Rayo Hielo', tipo: 'ice', categoria: 'special', poder: 90 },
