@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "PokéMMO Damage Calc"
+description = "Calculadora móvil de daño para PokéMMO con selección de combatientes, movimientos y modificadores de batalla. Permite mantener Pokémon y movimientos personalizados guardados localmente en el dispositivo."
+version = "1.0.0"
+id = "artifacts/pokemmo-damage-calc"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25495
+
+[services.development]
+run = "pnpm --filter @workspace/pokemmo-damage-calc run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/pokemmo-damage-calc", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/pokemmo-damage-calc/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25495"
+BASE_PATH = "/"
