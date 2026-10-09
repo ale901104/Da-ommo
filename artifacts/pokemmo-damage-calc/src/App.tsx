@@ -1,17 +1,56 @@
-import { type FormEvent, useEffect, useMemo, useState } from 'react';
-import { Activity, ChevronDown, ChevronRight, CircleHelp, CloudSun, Edit2, Gauge, Menu, Minus, Plus, PlusCircle, RotateCcw, Swords, Trash2, X } from 'lucide-react';
+import { type ChangeEvent, type FormEvent, useEffect, useMemo, useState } from 'react';
+import { Activity, ChevronDown, ChevronRight, CircleHelp, CloudSun, Edit2, Gauge, ImagePlus, Menu, Minus, Palette, Plus, PlusCircle, RotateCcw, Swords, Trash2, X } from 'lucide-react';
 import { movimientosIniciales, pokemonIniciales } from './datos.js';
 
-type Pokemon = { id: string; nombre: string; tipo1: string; tipo2: string; hp: number; atk: number; def: number; spa: number; spd: number; spe: number };
+type StatKey = 'hp' | 'atk' | 'def' | 'spa' | 'spd' | 'spe';
+type StageKey = Exclude<StatKey, 'hp'>;
+type StatValues = Record<StatKey, number>;
+type StageValues = Record<StageKey, number>;
+type Pokemon = {
+  id: string; nombre: string; tipo1: string; tipo2: string;
+  hp: number; atk: number; def: number; spa: number; spd: number; spe: number;
+  ivs: StatValues; evs: StatValues; nature: string; item: string;
+  finalEvolution: boolean; boosts: StageValues;
+};
 type Move = { id: string; nombre: string; tipo: string; categoria: 'physical' | 'special'; poder: number };
 type ModalKind = 'pokemon' | 'movimiento' | null;
 type Weather = 'none' | 'sun' | 'rain' | 'sand' | 'hail';
 type Field = 'none' | 'reflect' | 'light-screen' | 'aurora-veil' | 'tailwind';
+type BackgroundChoice = 'mint' | 'dusk' | 'aurora' | 'custom';
 
 const STORAGE_KEY = 'pokemmo-calc-v1';
 const TYPES: [string, string][] = [['normal','Normal'],['fire','Fuego'],['water','Agua'],['electric','Eléctrico'],['grass','Planta'],['ice','Hielo'],['fighting','Lucha'],['poison','Veneno'],['ground','Tierra'],['flying','Volador'],['psychic','Psíquico'],['bug','Bicho'],['rock','Roca'],['ghost','Fantasma'],['dragon','Dragón'],['dark','Siniestro'],['steel','Acero'],['fairy','Hada']];
 const typeName = (id: string) => TYPES.find(([key]) => key === id)?.[1] ?? id;
-const STAT_KEYS = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'] as const;
+const STAT_KEYS: StatKey[] = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'];
+const STAGE_KEYS: StageKey[] = ['atk', 'def', 'spa', 'spd', 'spe'];
+const STAT_LABELS: Record<StatKey, string> = { hp: 'PS', atk: 'Ataque', def: 'Defensa', spa: 'At. Esp.', spd: 'Def. Esp.', spe: 'Velocidad' };
+const NATURES: [string, string, StageKey, StageKey][] = [
+  ['hardy','Fuerte','atk','atk'],['lonely','Huraña','atk','def'],['brave','Audaz','atk','spe'],['adamant','Firme','atk','spa'],['naughty','Pícara','atk','spd'],
+  ['bold','Osada','def','atk'],['docile','Dócil','def','def'],['relaxed','Plácida','def','spe'],['impish','Agitada','def','spa'],['lax','Floja','def','spd'],
+  ['timid','Miedosa','spe','atk'],['hasty','Activa','spe','def'],['serious','Seria','spe','spe'],['jolly','Alegre','spe','spa'],['naive','Ingenua','spe','spd'],
+  ['modest','Modesta','spa','atk'],['mild','Afable','spa','def'],['quiet','Mansa','spa','spe'],['bashful','Tímida','spa','spa'],['rash','Alocada','spa','spd'],
+  ['calm','Serena','spd','atk'],['gentle','Amable','spd','def'],['sassy','Grosera','spd','spe'],['careful','Cauta','spd','spa'],['quirky','Rara','spd','spd'],
+];
+const DEFAULT_IVS: StatValues = { hp:31, atk:31, def:31, spa:31, spd:31, spe:31 };
+const DEFAULT_EVS: StatValues = { hp:0, atk:0, def:0, spa:0, spd:0, spe:0 };
+const DEFAULT_BOOSTS: StageValues = { atk:0, def:0, spa:0, spd:0, spe:0 };
+const ITEMS: [string, string][] = [
+  ['none','Ninguno'],['eviolite','Mineral Evolutivo · Defensas ×1,5'],['assault-vest','Chaleco Asalto · Def. Esp. ×1,5'],
+  ['leftovers','Restos · recuperación, no afecta al daño'],['choice-band','Cinta Elegida · Ataque ×1,5'],
+  ['choice-specs','Gafas Elegidas · At. Esp. ×1,5'],['life-orb','Vidasfera · daño ×1,3'],
+  ['expert-belt','Cinta Experto · supereficaz ×1,2'],['muscle-band','Cinta Fuerte · físico ×1,1'],
+  ['wise-glasses','Gafas Especiales · especial ×1,1'],
+  ...TYPES.slice(1).map(([id,name]): [string,string] => [`${id}-gem`, `${name} Zafiro (+30% ${name})`]),
+];
+const createWallpaper = (top: string, bottom: string, accent: string) => {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1400" viewBox="0 0 800 1400"><defs><linearGradient id="g" x2="0" y2="1"><stop stop-color="${top}"/><stop offset="1" stop-color="${bottom}"/></linearGradient></defs><rect width="800" height="1400" fill="url(%23g)"/><circle cx="690" cy="210" r="245" fill="${accent}" fill-opacity=".18"/><circle cx="120" cy="810" r="310" fill="#fff" fill-opacity=".12"/><path d="M0 980C170 870 360 1060 520 950s240-40 280-100v550H0Z" fill="${accent}" fill-opacity=".14"/><path d="M0 1110c180-105 320 70 510-25s240-75 290-30v345H0Z" fill="#fff" fill-opacity=".12"/></svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+};
+const BACKGROUNDS: { id: Exclude<BackgroundChoice, 'custom'>; name: string; image: string }[] = [
+  { id:'mint', name:'Bruma marina', image:createWallpaper('#eaf4f1','#dcebee','#6bb39a') },
+  { id:'dusk', name:'Atardecer', image:createWallpaper('#f6e4d8','#e9dbe5','#dc9b79') },
+  { id:'aurora', name:'Aurora', image:createWallpaper('#dfece9','#d8dff0','#829bc5') },
+];
 const EFFECT: Record<string, Record<string, number>> = {
   normal: { rock:.5, ghost:0, steel:.5 }, fire: { fire:.5, water:.5, grass:2, ice:2, bug:2, rock:.5, dragon:.5, steel:2 },
   water: { fire:2, water:.5, grass:.5, ground:2, rock:2, dragon:.5 }, electric: { water:2, electric:.5, grass:.5, ground:0, flying:2, dragon:.5 },
@@ -31,22 +70,107 @@ const abilityOptions = [
   ['blaze','Mar Llamas (Fuego ×1,5, PS bajos)'],['torrent','Torrente (Agua ×1,5, PS bajos)'],
   ['overgrow','Espesura (Planta ×1,5, PS bajos)'],['swarm','Enjambre (Bicho ×1,5, PS bajos)'],
 ];
-const items: [string,string][] = [['none','Ninguno'],['choice-band','Cinta Elegida (Ataque ×1,5)'],['choice-specs','Gafas Elegidas (At. Esp. ×1,5)'],['life-orb','Vidasfera (daño ×1,3)'],['expert-belt','Cinta Experto (supereficaz ×1,2)'],['muscle-band','Cinta Fuerte (Físico ×1,1)'],['wise-glasses','Gafas Especiales (Especial ×1,1)'],...TYPES.slice(1).map(([id,name]): [string,string] => [`${id}-gem`, `${name} Zafiro (+30% ${name})`])];
+const items = ITEMS;
 const weatherOptions: [Weather,string][] = [['none','Sin clima'],['sun','Sol intenso'],['rain','Lluvia'],['sand','Tormenta de arena'],['hail','Granizo']];
 const fieldOptions: [Field,string][] = [['none','Sin efecto'],['reflect','Reflejo'],['light-screen','Pantalla de Luz'],['aurora-veil','Velo Aurora'],['tailwind','Viento Afín']];
 
+function safeInteger(value: unknown, fallback: number, min: number, max: number) {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? Math.max(min, Math.min(max, Math.floor(parsed))) : fallback;
+}
+function normalizeStatValues(value: unknown, fallback: StatValues, min: number, max: number): StatValues {
+  const source = value && typeof value === 'object' ? value as Partial<StatValues> : {};
+  return Object.fromEntries(STAT_KEYS.map(key => [key, safeInteger(source[key], fallback[key], min, max)])) as StatValues;
+}
+function normalizeBoostValues(value: unknown): StageValues {
+  const source = value && typeof value === 'object' ? value as Partial<StageValues> : {};
+  return Object.fromEntries(STAGE_KEYS.map(key => [key, safeInteger(source[key], 0, -6, 6)])) as StageValues;
+}
+function normalizePokemon(value: unknown): Pokemon {
+  const row = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+  const statDefaults: StatValues = { hp:80, atk:100, def:80, spa:80, spd:80, spe:80 };
+  const nature = typeof row.nature === 'string' && NATURES.some(([id]) => id === row.nature) ? row.nature : 'serious';
+  const item = typeof row.item === 'string' && ITEMS.some(([id]) => id === row.item) ? row.item : 'none';
+  return {
+    id: typeof row.id === 'string' ? row.id : `pk-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,
+    nombre: typeof row.nombre === 'string' ? row.nombre.slice(0,24) : 'Pokémon',
+    tipo1: typeof row.tipo1 === 'string' && TYPES.some(([id]) => id === row.tipo1) ? row.tipo1 : 'normal',
+    tipo2: typeof row.tipo2 === 'string' && TYPES.some(([id]) => id === row.tipo2) ? row.tipo2 : '',
+    hp: safeInteger(row.hp, statDefaults.hp, 1, 255),
+    atk: safeInteger(row.atk, statDefaults.atk, 1, 255),
+    def: safeInteger(row.def, statDefaults.def, 1, 255),
+    spa: safeInteger(row.spa, statDefaults.spa, 1, 255),
+    spd: safeInteger(row.spd, statDefaults.spd, 1, 255),
+    spe: safeInteger(row.spe, statDefaults.spe, 1, 255),
+    ivs: normalizeStatValues(row.ivs, DEFAULT_IVS, 0, 31),
+    evs: normalizeStatValues(row.evs, DEFAULT_EVS, 0, 252),
+    nature,
+    item,
+    finalEvolution: typeof row.finalEvolution === 'boolean' ? row.finalEvolution : true,
+    boosts: normalizeBoostValues(row.boosts),
+  };
+}
 function loadSaved() {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
-      const parsed = JSON.parse(stored);
-      if (Array.isArray(parsed.pokemon) && Array.isArray(parsed.movimientos)) return { pokemon: parsed.pokemon as Pokemon[], movimientos: parsed.movimientos as Move[] };
+      const parsed = JSON.parse(stored) as Record<string, unknown>;
+      if (Array.isArray(parsed.pokemon) && Array.isArray(parsed.movimientos)) {
+        const background = ['mint','dusk','aurora','custom'].includes(String(parsed.background)) ? parsed.background as BackgroundChoice : 'mint';
+        const customBackground = typeof parsed.customBackground === 'string' && parsed.customBackground.startsWith('data:image/') ? parsed.customBackground : '';
+        return {
+          pokemon: parsed.pokemon.map(normalizePokemon),
+          movimientos: parsed.movimientos as Move[],
+          background,
+          customBackground,
+        };
+      }
     }
   } catch { /* Fall back to the curated local sample roster. */ }
-  return { pokemon: pokemonIniciales as Pokemon[], movimientos: movimientosIniciales as Move[] };
+  return {
+    pokemon: (pokemonIniciales as unknown[]).map(normalizePokemon),
+    movimientos: movimientosIniciales as Move[],
+    background: 'mint' as BackgroundChoice,
+    customBackground: '',
+  };
 }
-function stat(base: number, level: number, hp = false) {
-  return hp ? Math.floor(((2 * base + 31) * level) / 100) + level + 10 : Math.floor(((2 * base + 31) * level) / 100) + 5;
+function stat(pokemon: Pokemon, key: StatKey, level: number) {
+  const core = Math.floor(((2 * pokemon[key] + pokemon.ivs[key] + Math.floor(pokemon.evs[key] / 4)) * level) / 100);
+  if (key === 'hp') return core + level + 10;
+  const base = core + 5;
+  const nature = NATURES.find(([id]) => id === pokemon.nature);
+  if (!nature || nature[2] === nature[3]) return base;
+  return Math.floor(base * (nature[2] === key ? 1.1 : nature[3] === key ? 0.9 : 1));
+}
+function applyStage(value: number, stage: number) {
+  const level = Math.max(-6, Math.min(6, stage));
+  return Math.floor(value * (level >= 0 ? (2 + level) / 2 : 2 / (2 - level)));
+}
+function compressBackground(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      try {
+        const scale = Math.min(1, 1440 / Math.max(image.naturalWidth, image.naturalHeight));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+        const context = canvas.getContext('2d');
+        if (!context) throw new Error('No se pudo procesar la imagen.');
+        context.fillStyle = '#eaf4f2';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        let result = canvas.toDataURL('image/jpeg', 0.76);
+        if (result.length > 1_650_000) result = canvas.toDataURL('image/jpeg', 0.56);
+        if (result.length > 1_850_000) throw new Error('La imagen sigue siendo demasiado grande. Prueba una imagen más pequeña.');
+        resolve(result);
+      } catch (error) { reject(error); }
+      finally { URL.revokeObjectURL(url); }
+    };
+    image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('No se pudo abrir esta imagen.')); };
+    image.src = url;
+  });
 }
 function effectiveness(moveType: string, defender: Pokemon) {
   const first = EFFECT[moveType]?.[defender.tipo1] ?? 1;
@@ -59,6 +183,8 @@ function App() {
   const initial = useMemo(loadSaved, []);
   const [pokemon, setPokemon] = useState<Pokemon[]>(initial.pokemon);
   const [moves, setMoves] = useState<Move[]>(initial.movimientos);
+  const [background, setBackground] = useState<BackgroundChoice>(initial.background);
+  const [customBackground, setCustomBackground] = useState(initial.customBackground);
   const [attackerId, setAttackerId] = useState(initial.pokemon[0]?.id ?? '');
   const [defenderId, setDefenderId] = useState(initial.pokemon[1]?.id ?? initial.pokemon[0]?.id ?? '');
   const [moveId, setMoveId] = useState(initial.movimientos[0]?.id ?? '');
@@ -66,15 +192,20 @@ function App() {
   const [defenderLevel, setDefenderLevel] = useState(50);
   const [weather, setWeather] = useState<Weather>('none');
   const [ability, setAbility] = useState('none');
-  const [item, setItem] = useState('none');
   const [field, setField] = useState<Field>('none');
   const [drawer, setDrawer] = useState(false);
-  const [openSections, setOpenSections] = useState({ pokemon: true, moves: false });
+  const [openSections, setOpenSections] = useState({ pokemon: true, moves: false, backgrounds: false });
   const [modal, setModal] = useState<ModalKind>(null);
   const [editing, setEditing] = useState<Pokemon | Move | null>(null);
   const [toast, setToast] = useState('');
 
-  useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify({ pokemon, movimientos: moves })); }, [pokemon, moves]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ pokemon, movimientos: moves, background, customBackground }));
+    } catch {
+      setToast('No se pudo guardar. Libera espacio local o elige otra imagen.');
+    }
+  }, [pokemon, moves, background, customBackground]);
   useEffect(() => {
     if (toast) { const timer = window.setTimeout(() => setToast(''), 2400); return () => window.clearTimeout(timer); }
     return undefined;
@@ -90,9 +221,13 @@ function App() {
   const move = moves.find(m => m.id === moveId);
   const calc = useMemo(() => {
     if (!attacker || !defender || !move) return null;
-    const hp = stat(defender.hp, defenderLevel, true);
-    const atk = stat(move.categoria === 'physical' ? attacker.atk : attacker.spa, attackerLevel);
-    let def = stat(move.categoria === 'physical' ? defender.def : defender.spd, defenderLevel);
+    const attackKey: StageKey = move.categoria === 'physical' ? 'atk' : 'spa';
+    const defenseKey: StageKey = move.categoria === 'physical' ? 'def' : 'spd';
+    const hp = stat(defender, 'hp', defenderLevel);
+    const atk = applyStage(stat(attacker, attackKey, attackerLevel), attacker.boosts[attackKey]);
+    let def = applyStage(stat(defender, defenseKey, defenderLevel), defender.boosts[defenseKey]);
+    if (defender.item === 'eviolite' && !defender.finalEvolution) def = Math.floor(def * 1.5);
+    if (defender.item === 'assault-vest' && move.categoria === 'special') def = Math.floor(def * 1.5);
     if (weather === 'sand' && move.categoria === 'special' && (defender.tipo1 === 'rock' || defender.tipo2 === 'rock')) def = Math.floor(def * 1.5);
     const eff = effectiveness(move.tipo, defender);
     const stab = attacker.tipo1 === move.tipo || attacker.tipo2 === move.tipo ? (ability === 'adaptability' ? 2 : 1.5) : 1;
@@ -103,18 +238,18 @@ function App() {
     if (ability === 'technician' && move.poder <= 60) abilityMod = 1.5;
     if ((ability === 'blaze' && move.tipo === 'fire') || (ability === 'torrent' && move.tipo === 'water') || (ability === 'overgrow' && move.tipo === 'grass') || (ability === 'swarm' && move.tipo === 'bug')) abilityMod = 1.5;
     let itemStatMod = 1;
-    if ((item === 'choice-band' && move.categoria === 'physical') || (item === 'choice-specs' && move.categoria === 'special')) itemStatMod = 1.5;
-    if ((item === 'muscle-band' && move.categoria === 'physical') || (item === 'wise-glasses' && move.categoria === 'special')) itemStatMod = 1.1;
+    if ((attacker.item === 'choice-band' && move.categoria === 'physical') || (attacker.item === 'choice-specs' && move.categoria === 'special')) itemStatMod = 1.5;
+    if ((attacker.item === 'muscle-band' && move.categoria === 'physical') || (attacker.item === 'wise-glasses' && move.categoria === 'special')) itemStatMod = 1.1;
     const attackAbilityMod = move.categoria === 'physical' && ['huge-power','pure-power'].includes(ability) ? 2 : 1;
     const effectiveAtk = Math.floor(atk * itemStatMod * attackAbilityMod);
-    let itemPower = item === `${move.tipo}-gem` ? 1.3 : item === 'life-orb' ? 1.3 : 1;
-    if (item === 'expert-belt' && eff > 1) itemPower = 1.2;
+    let itemPower = attacker.item === `${move.tipo}-gem` ? 1.3 : attacker.item === 'life-orb' ? 1.3 : 1;
+    if (attacker.item === 'expert-belt' && eff > 1) itemPower = 1.2;
     const screen = ((['reflect','aurora-veil'].includes(field) && move.categoria === 'physical') || (['light-screen','aurora-veil'].includes(field) && move.categoria === 'special')) ? .5 : 1;
     const base = Math.floor(Math.floor((Math.floor(2 * attackerLevel / 5 + 2) * move.poder * effectiveAtk) / Math.max(1, def)) / 50) + 2;
     const modifier = stab * eff * weatherMod * abilityMod * itemPower * screen;
     const lo = Math.floor(base * modifier * .85), hi = Math.floor(base * modifier);
     return { hp, eff, lo, hi, pct: hp ? hi / hp * 100 : 0, atk: effectiveAtk, def };
-  }, [attacker, defender, move, attackerLevel, defenderLevel, weather, ability, item, field]);
+  }, [attacker, defender, move, attackerLevel, defenderLevel, weather, ability, field]);
   const koChance = calc ? calc.lo >= calc.hp ? 'KO seguro' : calc.hi >= calc.hp ? 'Posible KO' : 'No es KO' : 'Sin datos';
   const openForm = (kind: Exclude<ModalKind, null>, itemToEdit: Pokemon | Move | null = null) => { setEditing(itemToEdit); setModal(kind); };
 
@@ -123,8 +258,17 @@ function App() {
     const data = new FormData(event.currentTarget);
     const name = String(data.get('nombre') ?? '').trim();
     if (!name) return;
-    const next: Pokemon = { id: editing?.id ?? `pk-${Date.now()}`, nombre: name.slice(0, 24), tipo1: String(data.get('tipo1')), tipo2: String(data.get('tipo2') ?? ''),
-      hp: Number(data.get('hp')), atk: Number(data.get('atk')), def: Number(data.get('def')), spa: Number(data.get('spa')), spd: Number(data.get('spd')), spe: Number(data.get('spe')) };
+    const ivs = Object.fromEntries(STAT_KEYS.map(key => [key, Number(data.get(`iv-${key}`))])) as StatValues;
+    const evs = Object.fromEntries(STAT_KEYS.map(key => [key, Number(data.get(`ev-${key}`))])) as StatValues;
+    const baseStats = Object.fromEntries(STAT_KEYS.map(key => [key, Number(data.get(key))])) as StatValues;
+    if (Object.values(baseStats).some(value => !Number.isInteger(value) || value < 1 || value > 255)) { setToast('Las estadísticas base deben estar entre 1 y 255.'); return; }
+    if (Object.values(ivs).some(value => !Number.isInteger(value) || value < 0 || value > 31)) { setToast('Cada IV debe estar entre 0 y 31.'); return; }
+    if (Object.values(evs).some(value => !Number.isInteger(value) || value < 0 || value > 252) || Object.values(evs).reduce((sum,value) => sum + value,0) > 510) { setToast('Los EV deben estar entre 0 y 252, con un máximo total de 510.'); return; }
+    const next = normalizePokemon({
+      id: editing?.id ?? `pk-${Date.now()}`, nombre: name.slice(0, 24), tipo1: String(data.get('tipo1')), tipo2: String(data.get('tipo2') ?? ''),
+      ...baseStats, ivs, evs, nature: String(data.get('nature') ?? 'serious'), item: String(data.get('item') ?? 'none'),
+      finalEvolution: data.get('finalEvolution') === 'on', boosts: (editing as Pokemon | null)?.boosts ?? DEFAULT_BOOSTS,
+    });
     if (Object.values(next).some(value => typeof value === 'number' && (!Number.isFinite(value) || value < 1 || value > 255))) { setToast('Cada estadística debe estar entre 1 y 255.'); return; }
     setPokemon(existing => editing ? existing.map(p => p.id === editing.id ? next : p) : [...existing, next]);
     if (!editing) setAttackerId(next.id);
@@ -149,13 +293,47 @@ function App() {
     if (m && window.confirm(`¿Eliminar el movimiento ${m.nombre}?`)) { setMoves(list => list.filter(item => item.id !== id)); setToast('Movimiento eliminado.'); }
   }
   const updateLevel = (which: 'attacker' | 'defender', by: number) => (which === 'attacker' ? setAttackerLevel : setDefenderLevel)(level => Math.max(1, Math.min(100, level + by)));
+  const updateHeldItem = (id: string | undefined, heldItem: string) => {
+    if (!id) return;
+    setPokemon(roster => roster.map(p => p.id === id ? { ...p, item: heldItem } : p));
+  };
+  const updateBoost = (id: string | undefined, key: StageKey, change: number) => {
+    if (!id) return;
+    setPokemon(roster => roster.map(p => p.id === id ? { ...p, boosts: { ...p.boosts, [key]: Math.max(-6, Math.min(6, p.boosts[key] + change)) } } : p));
+  };
+  const clearActiveBoosts = () => {
+    const active = new Set([attackerId, defenderId]);
+    setPokemon(roster => roster.map(p => active.has(p.id) ? { ...p, boosts: { ...DEFAULT_BOOSTS } } : p));
+  };
+  async function handleBackgroundUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = '';
+    if (!file) return;
+    if (!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size > 12 * 1024 * 1024) {
+      setToast('Elige un archivo JPG, PNG o WebP de menos de 12 MB.');
+      return;
+    }
+    try {
+      const image = await compressBackground(file);
+      setCustomBackground(image);
+      setBackground('custom');
+      setToast('Fondo guardado en este dispositivo.');
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : 'No se pudo guardar el fondo.');
+    }
+  }
   const chosenTypePills = (p: Pokemon | undefined) => p ? <div className="type-pills"><span className="type-pill">{typeName(p.tipo1)}</span>{p.tipo2 && <span className="type-pill">{typeName(p.tipo2)}</span>}</div> : null;
+  const backgroundImage = background === 'custom' && customBackground
+    ? `linear-gradient(155deg,rgba(234,244,242,.68),rgba(223,236,239,.56)),url("${customBackground}")`
+    : BACKGROUNDS.find(option => option.id === background)?.image ?? BACKGROUNDS[0].image;
+  const editingPokemon = modal === 'pokemon' ? editing as Pokemon | null : null;
+  const editingMove = modal === 'movimiento' ? editing as Move | null : null;
 
-  return <main className="app-shell">
+  return <main className="app-shell" style={{ backgroundImage }}>
     <header className="topbar">
       <button className="icon-button" aria-label="Abrir menú" data-testid="button-open-menu" onClick={() => setDrawer(true)}><Menu size={19}/></button>
       <div className="brand"><div className="brand-mark"><Swords size={18}/></div><div><div className="brand-name">PokéMMO</div><div className="brand-kicker">calculadora de daño</div></div></div>
-      <button className="icon-button" aria-label="Restablecer escenario" data-testid="button-reset" onClick={() => { setWeather('none');setAbility('none');setItem('none');setField('none');setAttackerLevel(50);setDefenderLevel(50);setToast('Escenario restablecido.'); }}><RotateCcw size={17}/></button>
+      <button className="icon-button" aria-label="Restablecer escenario" data-testid="button-reset" onClick={() => { setWeather('none');setAbility('none');setField('none');setAttackerLevel(50);setDefenderLevel(50);clearActiveBoosts();setToast('Escenario restablecido.'); }}><RotateCcw size={17}/></button>
     </header>
     <section className="hero">
       <div className="eyebrow">Herramienta de combate · v1.0</div>
@@ -177,8 +355,26 @@ function App() {
       <div className="conditions-grid">
         <div className="field"><label htmlFor="weather">Clima</label><select id="weather" data-testid="select-weather" value={weather} onChange={e => setWeather(e.target.value as Weather)}>{weatherOptions.map(([v,label]) => <option key={v} value={v}>{label}</option>)}</select></div>
         <div className="field"><label htmlFor="ability">Habilidad atacante</label><select id="ability" data-testid="select-ability" value={ability} onChange={e => setAbility(e.target.value)}>{abilityOptions.map(([v,label]) => <option key={v} value={v}>{label}</option>)}</select></div>
-        <div className="field"><label htmlFor="item">Objeto atacante</label><select id="item" data-testid="select-item" value={item} onChange={e => setItem(e.target.value)}>{items.map(([v,label]) => <option key={v} value={v}>{label}</option>)}</select></div>
+        <div className="field"><label htmlFor="attacker-item">Objeto atacante</label><select id="attacker-item" data-testid="select-attacker-item" value={attacker?.item ?? 'none'} disabled={!attacker} onChange={e => updateHeldItem(attacker?.id,e.target.value)}>{items.map(([v,label]) => <option key={v} value={v}>{label}</option>)}</select></div>
+        <div className="field"><label htmlFor="defender-item">Objeto defensor</label><select id="defender-item" data-testid="select-defender-item" value={defender?.item ?? 'none'} disabled={!defender} onChange={e => updateHeldItem(defender?.id,e.target.value)}>{items.map(([v,label]) => <option key={v} value={v}>{label}</option>)}</select></div>
         <div className="field"><label htmlFor="field-effect">Efecto de campo</label><select id="field-effect" data-testid="select-field-effect" value={field} onChange={e => setField(e.target.value as Field)}>{fieldOptions.map(([v,label]) => <option key={v} value={v}>{label}</option>)}</select></div>
+      </div>
+    </section>
+    <section className="glass stage-card">
+      <div className="section-head"><span className="section-title">Boosts de combate</span><Activity size={15} color="#6d9290"/></div>
+      <p className="stage-description">Modifica las etapas de cada Pokémon. El ataque y la defensa seleccionados se aplican al daño.</p>
+      <div className="stage-columns">
+        {([['Atacante',attacker],['Defensor',defender]] as const).map(([role,combatant]) => combatant && <details className="stage-panel" key={`${role}-${combatant.id}`} data-testid={`panel-boosts-${role.toLowerCase()}`}>
+          <summary><span>{role} · {combatant.nombre}</span><ChevronDown size={15}/></summary>
+          <div className="stage-rows">{STAGE_KEYS.map(key => <div className="stage-row" key={key}>
+            <span>{STAT_LABELS[key]}</span>
+            <div className="stage-stepper">
+              <button type="button" aria-label={`Bajar boost de ${STAT_LABELS[key]} de ${role.toLowerCase()}`} data-testid={`button-boost-down-${role.toLowerCase()}-${key}`} disabled={combatant.boosts[key] <= -6} onClick={() => updateBoost(combatant.id,key,-1)}><Minus size={12}/></button>
+              <strong data-testid={`text-boost-${role.toLowerCase()}-${key}`}>{combatant.boosts[key] > 0 ? `+${combatant.boosts[key]}` : combatant.boosts[key]}</strong>
+              <button type="button" aria-label={`Subir boost de ${STAT_LABELS[key]} de ${role.toLowerCase()}`} data-testid={`button-boost-up-${role.toLowerCase()}-${key}`} disabled={combatant.boosts[key] >= 6} onClick={() => updateBoost(combatant.id,key,1)}><Plus size={12}/></button>
+            </div>
+          </div>)}</div>
+        </details>)}
       </div>
     </section>
     <section className="glass results" aria-live="polite">
@@ -188,12 +384,12 @@ function App() {
         <p className="result-caption">{move.nombre} contra {defender.nombre} · <span data-testid="text-effectiveness">{calc.eff === 0 ? 'Sin efecto' : calc.eff > 1 ? `Supereficaz ×${calc.eff}` : calc.eff < 1 ? `Poco eficaz ×${calc.eff}` : 'Daño normal'}</span></p>
         <div className="hp-track"><div className="hp-fill" style={{width:`${Math.min(100,calc.pct)}%`}}/></div>
         <div className="result-bottom"><span>PS del defensor: {calc.hp}</span><strong data-testid="text-damage-percent">{calc.pct.toFixed(1)}% máx.</strong></div>
-        <div className="modifiers"><span className="modifier">STAB ×{attacker?.tipo1 === move.tipo || attacker?.tipo2 === move.tipo ? (ability === 'adaptability' ? '2' : '1,5') : '1'}</span><span className="modifier">{field === 'tailwind' ? 'Viento Afín: no modifica daño' : field === 'none' ? 'Sin pantallas' : `Pantalla: ${fieldOptions.find(([v])=>v===field)?.[1]}`}</span>{weather !== 'none' && <span className="modifier">{weatherOptions.find(([v])=>v===weather)?.[1]}</span>}</div>
+        <div className="modifiers"><span className="modifier">STAB ×{attacker?.tipo1 === move.tipo || attacker?.tipo2 === move.tipo ? (ability === 'adaptability' ? '2' : '1,5') : '1'}</span><span className="modifier">{field === 'tailwind' ? 'Viento Afín: no modifica daño' : field === 'none' ? 'Sin pantallas' : `Pantalla: ${fieldOptions.find(([v])=>v===field)?.[1]}`}</span>{weather !== 'none' && <span className="modifier">{weatherOptions.find(([v])=>v===weather)?.[1]}</span>}{attacker?.item==='leftovers'&&attacker&&<span className="modifier">Restos atacante: +{Math.max(1,Math.floor(stat(attacker,'hp',attackerLevel)/16))} PS tras el turno</span>}{defender.item==='leftovers'&&<span className="modifier">Restos defensor: +{Math.max(1,Math.floor(stat(defender,'hp',defenderLevel)/16))} PS tras el turno</span>}</div>
       </> : <div className="empty-state">Añade Pokémon y movimientos para calcular el daño.</div>}
     </section>
-    <p className="assumption"><b>Modelo estimado:</b> naturaleza neutra, IV 31 y 0 EV en todas las estadísticas. Sin crítico, variación aleatoria estándar 85–100%. El cálculo es orientativo para PokéMMO.</p>
+    <p className="assumption"><b>Modelo estimado:</b> usa IV, EV, naturaleza, objeto y boosts de las fichas seleccionadas. Sin crítico; variación aleatoria estándar 85–100%. El cálculo es orientativo para PokéMMO.</p>
     <div className="subhead"><h2>Estadísticas calculadas</h2><span>NIVEL · {attackerLevel} / {defenderLevel}</span></div>
-    {attacker && defender && <div className="quick-stats"><div className="stat-chip"><small>Ataque efectivo</small><strong data-testid="text-effective-attack">{calc ? calc.atk : '—'}</strong></div><div className="stat-chip"><small>Defensa rival</small><strong data-testid="text-effective-defense">{calc ? calc.def : '—'}</strong></div><div className="stat-chip"><small>Velocidad</small><strong>{stat(attacker.spe,attackerLevel)}</strong></div></div>}
+    {attacker && defender && <div className="quick-stats"><div className="stat-chip"><small>Ataque efectivo</small><strong data-testid="text-effective-attack">{calc ? calc.atk : '—'}</strong></div><div className="stat-chip"><small>Defensa rival</small><strong data-testid="text-effective-defense">{calc ? calc.def : '—'}</strong></div><div className="stat-chip"><small>Velocidad</small><strong>{applyStage(stat(attacker,'spe',attackerLevel),attacker.boosts.spe)}</strong></div></div>}
     <div className="subhead"><h2>Atajo de equipo</h2><span>{pokemon.length} POKÉMON</span></div>
     <div className="quick-stats">{pokemon.slice(0,3).map(p => <button className="stat-chip" style={{border:0}} key={p.id} data-testid={`button-roster-${p.id}`} onClick={() => setAttackerId(p.id)}><small>{typeName(p.tipo1)}</small><strong>{p.nombre}</strong></button>)}</div>
     {drawer && <div className="drawer-backdrop" onMouseDown={e => {if(e.target===e.currentTarget)setDrawer(false);}}>
@@ -204,6 +400,18 @@ function App() {
           {openSections.pokemon && <><button className="drawer-link" data-testid="button-add-pokemon" onClick={() => openForm('pokemon')}><PlusCircle size={15}/> Añadir Pokémon</button><button className="drawer-link" data-testid="button-manage-pokemon" onClick={() => openForm('pokemon')}><Activity size={15}/> Gestionar equipo ({pokemon.length})</button></>}</div>
         <div className="drawer-section"><button data-testid="button-toggle-moves-section" onClick={() => setOpenSections(s => ({...s,moves:!s.moves}))}><span>Movimientos</span>{openSections.moves?<ChevronDown size={16}/>:<ChevronRight size={16}/>}</button>
           {openSections.moves && <><button className="drawer-link" data-testid="button-add-move" onClick={() => openForm('movimiento')}><PlusCircle size={15}/> Añadir movimiento</button><button className="drawer-link" data-testid="button-manage-moves" onClick={() => openForm('movimiento')}><Swords size={15}/> Gestionar movimientos ({moves.length})</button></>}</div>
+        <div className="drawer-section"><button data-testid="button-toggle-background-section" onClick={() => setOpenSections(s => ({...s,backgrounds:!s.backgrounds}))}><span><Palette size={15}/> Personalización de fondo</span>{openSections.backgrounds?<ChevronDown size={16}/>:<ChevronRight size={16}/>}</button>
+          {openSections.backgrounds && <div className="background-settings">
+            <p>Elige una imagen o sube la tuya. Se guarda en este dispositivo.</p>
+            <div className="background-options">{BACKGROUNDS.map(option => <button type="button" className={`background-option ${background===option.id?'selected':''}`} key={option.id} data-testid={`button-background-${option.id}`} aria-pressed={background===option.id} onClick={() => setBackground(option.id)}>
+              <span className="background-preview" style={{backgroundImage:option.image}}/><span>{option.name}</span>{background===option.id&&<span className="background-check">✓</span>}
+            </button>)}
+            {customBackground && <button type="button" className={`background-option ${background==='custom'?'selected':''}`} data-testid="button-background-custom" aria-pressed={background==='custom'} onClick={() => setBackground('custom')}>
+              <span className="background-preview" style={{backgroundImage:`url("${customBackground}")`}}/><span>Mi imagen</span>{background==='custom'&&<span className="background-check">✓</span>}
+            </button>}</div>
+            <label className="background-upload"><ImagePlus size={16}/><span>Subir una imagen</span><input type="file" accept="image/jpeg,image/png,image/webp" data-testid="input-background-upload" onChange={handleBackgroundUpload}/></label>
+            {customBackground && <button className="remove-background" type="button" data-testid="button-remove-background" onClick={() => {setCustomBackground('');if(background==='custom')setBackground('mint');setToast('Imagen personalizada eliminada.');}}>Eliminar mi imagen</button>}
+          </div>}</div>
         <div className="drawer-note"><strong><CircleHelp size={12} style={{verticalAlign:'-2px',marginRight:5}}/> Sobre el cálculo</strong>Daño estimado con fórmula estándar y datos editables en este dispositivo. Viento Afín afecta a la velocidad, no al daño.</div>
       </nav>
     </div>}
@@ -212,17 +420,21 @@ function App() {
         <div className="modal-head"><div><div className="brand-kicker">ROSTER LOCAL · SE GUARDA EN TU DISPOSITIVO</div><h2 id="modal-title">{modal === 'pokemon' ? 'Equipo Pokémon' : 'Biblioteca de movimientos'}</h2></div><button className="icon-button" aria-label="Cerrar" data-testid="button-close-modal" onClick={() => setModal(null)}><X size={18}/></button></div>
         {modal === 'pokemon' ? <>
           <form className="modal-form" key={editing?.id ?? 'new-pokemon'} onSubmit={savePokemon}>
-            <div className="form-field"><label htmlFor="pokemon-name">Nombre</label><input id="pokemon-name" name="nombre" data-testid="input-pokemon-name" defaultValue={(editing as Pokemon | null)?.nombre ?? ''} maxLength={24} required placeholder="Ej. Garchomp"/></div>
-            <div className="form-grid"><FormType name="tipo1" label="Tipo 1" initial={(editing as Pokemon | null)?.tipo1 ?? 'normal'}/><FormType name="tipo2" label="Tipo 2 (opcional)" initial={(editing as Pokemon | null)?.tipo2 ?? ''} optional/></div>
-            <div className="form-grid">{STAT_KEYS.map((key,index) => <div className="form-field" key={key}><label htmlFor={`stat-${key}`}>{['PS base','Ataque base','Defensa base','At. Esp. base','Def. Esp. base','Velocidad base'][index]}</label><input id={`stat-${key}`} name={key} data-testid={`input-pokemon-${key}`} type="number" min="1" max="255" required defaultValue={(editing as Pokemon | null)?.[key] ?? [80,100,80,80,80,80][index]}/></div>)}</div>
+            <div className="form-field"><label htmlFor="pokemon-name">Nombre</label><input id="pokemon-name" name="nombre" data-testid="input-pokemon-name" defaultValue={editingPokemon?.nombre ?? ''} maxLength={24} required placeholder="Ej. Garchomp"/></div>
+            <div className="form-grid"><FormType name="tipo1" label="Tipo 1" initial={editingPokemon?.tipo1 ?? 'normal'}/><FormType name="tipo2" label="Tipo 2 (opcional)" initial={editingPokemon?.tipo2 ?? ''} optional/></div>
+            <div className="form-subsection"><div className="form-subhead">Estadísticas base</div><div className="form-grid">{STAT_KEYS.map((key,index) => <div className="form-field" key={key}><label htmlFor={`stat-${key}`}>{STAT_LABELS[key]} base</label><input id={`stat-${key}`} name={key} data-testid={`input-pokemon-${key}`} type="number" min="1" max="255" step="1" required defaultValue={editingPokemon?.[key] ?? [80,100,80,80,80,80][index]}/></div>)}</div></div>
+            <div className="form-subsection"><div className="form-subhead">IVs · de 0 a 31</div><div className="form-grid">{STAT_KEYS.map(key => <div className="form-field" key={key}><label htmlFor={`iv-${key}`}>{STAT_LABELS[key]}</label><input id={`iv-${key}`} name={`iv-${key}`} data-testid={`input-iv-${key}`} type="number" min="0" max="31" step="1" required defaultValue={editingPokemon?.ivs[key] ?? 31}/></div>)}</div></div>
+            <div className="form-subsection"><div className="form-subhead">EVs · 0–252 por estadística; 510 en total</div><div className="form-grid">{STAT_KEYS.map(key => <div className="form-field" key={key}><label htmlFor={`ev-${key}`}>{STAT_LABELS[key]}</label><input id={`ev-${key}`} name={`ev-${key}`} data-testid={`input-ev-${key}`} type="number" min="0" max="252" step="1" required defaultValue={editingPokemon?.evs[key] ?? 0}/></div>)}</div></div>
+            <div className="form-grid"><div className="form-field"><label htmlFor="pokemon-nature">Naturaleza</label><select id="pokemon-nature" name="nature" data-testid="select-pokemon-nature" defaultValue={editingPokemon?.nature ?? 'serious'}>{NATURES.map(([id,label]) => <option value={id} key={id}>{label}</option>)}</select></div><div className="form-field"><label htmlFor="pokemon-held-item">Objeto equipado</label><select id="pokemon-held-item" name="item" data-testid="select-pokemon-held-item" defaultValue={editingPokemon?.item ?? 'none'}>{items.map(([id,label]) => <option value={id} key={id}>{label}</option>)}</select></div></div>
+            <label className="check-row"><input type="checkbox" name="finalEvolution" data-testid="checkbox-final-evolution" defaultChecked={editingPokemon?.finalEvolution ?? true}/><span>Está en su evolución final</span><small>El Mineral Evolutivo solo se aplica si no lo está.</small></label>
             <div className="form-actions"><button type="button" className="btn btn-muted" data-testid="button-new-pokemon" onClick={() => setEditing(null)}>Nuevo registro</button><button className="btn btn-primary" data-testid="button-save-pokemon">{editing?'Guardar cambios':'Añadir Pokémon'}</button></div>
           </form>
           <div className="roster-list">{pokemon.length ? pokemon.map(p => <div className="roster-row" key={p.id}><div className="roster-info"><strong>{p.nombre}</strong><small>{typeName(p.tipo1)}{p.tipo2?` / ${typeName(p.tipo2)}`:''} · PS {p.hp} · Atq. {p.atk}</small></div><button className="tiny-action" aria-label={`Editar ${p.nombre}`} data-testid={`button-edit-pokemon-${p.id}`} onClick={() => setEditing(p)}><Edit2 size={14}/></button><button className="tiny-action delete" aria-label={`Eliminar ${p.nombre}`} data-testid={`button-delete-pokemon-${p.id}`} onClick={() => deletePokemon(p.id)}><Trash2 size={14}/></button></div>) : <div className="empty-state">Tu equipo está vacío. Añade un Pokémon arriba.</div>}</div>
         </> : <>
           <form className="modal-form" key={editing?.id ?? 'new-move'} onSubmit={saveMove}>
-            <div className="form-field"><label htmlFor="move-name">Nombre</label><input id="move-name" name="nombre" data-testid="input-move-name" defaultValue={(editing as Move | null)?.nombre ?? ''} maxLength={28} required placeholder="Ej. Terremoto"/></div>
-            <div className="form-grid"><FormType name="tipo" label="Tipo" initial={(editing as Move | null)?.tipo ?? 'normal'}/><div className="form-field"><label htmlFor="move-category">Categoría</label><select id="move-category" name="categoria" data-testid="select-move-category" defaultValue={(editing as Move | null)?.categoria ?? 'physical'}><option value="physical">Físico</option><option value="special">Especial</option></select></div></div>
-            <div className="form-field"><label htmlFor="move-power">Potencia base</label><input id="move-power" name="poder" data-testid="input-move-power" type="number" min="1" max="250" required defaultValue={(editing as Move | null)?.poder ?? 80}/></div>
+            <div className="form-field"><label htmlFor="move-name">Nombre</label><input id="move-name" name="nombre" data-testid="input-move-name" defaultValue={editingMove?.nombre ?? ''} maxLength={28} required placeholder="Ej. Terremoto"/></div>
+            <div className="form-grid"><FormType name="tipo" label="Tipo" initial={editingMove?.tipo ?? 'normal'}/><div className="form-field"><label htmlFor="move-category">Categoría</label><select id="move-category" name="categoria" data-testid="select-move-category" defaultValue={editingMove?.categoria ?? 'physical'}><option value="physical">Físico</option><option value="special">Especial</option></select></div></div>
+            <div className="form-field"><label htmlFor="move-power">Potencia base</label><input id="move-power" name="poder" data-testid="input-move-power" type="number" min="1" max="250" required defaultValue={editingMove?.poder ?? 80}/></div>
             <div className="form-actions"><button type="button" className="btn btn-muted" data-testid="button-new-move" onClick={() => setEditing(null)}>Nuevo registro</button><button className="btn btn-primary" data-testid="button-save-move">{editing?'Guardar cambios':'Añadir movimiento'}</button></div>
           </form>
           <div className="roster-list">{moves.length ? moves.map(m => <div className="roster-row" key={m.id}><div className="roster-info"><strong>{m.nombre}</strong><small>{typeName(m.tipo)} · {m.categoria==='physical'?'Físico':'Especial'} · {m.poder} potencia</small></div><button className="tiny-action" aria-label={`Editar ${m.nombre}`} data-testid={`button-edit-move-${m.id}`} onClick={() => setEditing(m)}><Edit2 size={14}/></button><button className="tiny-action delete" aria-label={`Eliminar ${m.nombre}`} data-testid={`button-delete-move-${m.id}`} onClick={() => deleteMove(m.id)}><Trash2 size={14}/></button></div>) : <div className="empty-state">No hay movimientos. Añade uno arriba.</div>}</div>
