@@ -1,0 +1,8 @@
+{
+  "name": "PokéMMO Damage Calc",
+  "description": "Calculadora de daño de batalla para PokéMMO con selección de combatientes, movimientos y modificadores guardados localmente.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
