@@ -1,0 +1,309 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DatosDeCombatePokemon",
+  "version": "1.0.0",
+  "descripcion": "Datos de combate competitivos para PokéMMO / Pokémon Showdown con tipos, estadísticas base, todas las habilidades y movimientos aprendibles.",
+  "categorias_disponibles": ["ou", "uu", "nu"],
+  "pokemon": [
+    {
+      "id": "slowbro",
+      "nombre": "Slowbro",
+      "categoria": "ou",
+      "tier": "ou",
+      "tipos": ["water", "psychic"],
+      "tipo1": "water",
+      "tipo2": "psychic",
+      "estadisticas_base": {
+        "hp": 95,
+        "ataque": 75,
+        "defensa": 110,
+        "ataque_especial": 100,
+        "defensa_especial": 80,
+        "velocidad": 30
+      },
+      "stats": {
+        "hp": 95,
+        "atk": 75,
+        "def": 110,
+        "spa": 100,
+        "spd": 80,
+        "spe": 30
+      },
+      "habilidades": [
+        {
+          "id": "oblivious",
+          "nombre": "Despiste",
+          "efecto": "Inmune a atracción, seducción, mofa y seducción."
+        },
+        {
+          "id": "own-tempo",
+          "nombre": "Ritmo Propio",
+          "efecto": "Inmune al estado de confusión e intimidación."
+        },
+        {
+          "id": "regenerator",
+          "nombre": "Regenerador",
+          "efecto": "Restaura hasta un tercio (33.3%) de sus PS máximos al retirarse del combate."
+        }
+      ],
+      "movimientos": [
+        { "id": "scald", "nombre": "Escaldar", "tipo": "water", "categoria": "special", "poder": 80, "precision": 100 },
+        { "id": "surf", "nombre": "Surf", "tipo": "water", "categoria": "special", "poder": 90, "precision": 100 },
+        { "id": "hydro-pump", "nombre": "Hidrobomba", "tipo": "water", "categoria": "special", "poder": 110, "precision": 80 },
+        { "id": "brine", "nombre": "Salmuera", "tipo": "water", "categoria": "special", "poder": 65, "precision": 100 },
+        { "id": "waterfall", "nombre": "Cascada", "tipo": "water", "categoria": "physical", "poder": 80, "precision": 100 },
+        { "id": "psychic", "nombre": "Psíquico", "tipo": "psychic", "categoria": "special", "poder": 90, "precision": 100 },
+        { "id": "psyshock", "nombre": "Psicocarga", "tipo": "psychic", "categoria": "special", "poder": 80, "precision": 100 },
+        { "id": "zen-headbutt", "nombre": "Cabezazo Zen", "tipo": "psychic", "categoria": "physical", "poder": 80, "precision": 90 },
+        { "id": "ice-beam", "nombre": "Rayo Hielo", "tipo": "ice", "categoria": "special", "poder": 90, "precision": 100 },
+        { "id": "blizzard", "nombre": "Ventisca", "tipo": "ice", "categoria": "special", "poder": 110, "precision": 70 },
+        { "id": "ice-punch", "nombre": "Puño Hielo", "tipo": "ice", "categoria": "physical", "poder": 75, "precision": 100 },
+        { "id": "flamethrower", "nombre": "Lanzallamas", "tipo": "fire", "categoria": "special", "poder": 90, "precision": 100 },
+        { "id": "fire-blast", "nombre": "Llamarada", "tipo": "fire", "categoria": "special", "poder": 110, "precision": 85 },
+        { "id": "fire-punch", "nombre": "Puño Fuego", "tipo": "fire", "categoria": "physical", "poder": 75, "precision": 100 },
+        { "id": "focus-blast", "nombre": "Onda Certera", "tipo": "fighting", "categoria": "special", "poder": 120, "precision": 70 },
+        { "id": "drain-punch", "nombre": "Puño Drenaje", "tipo": "fighting", "categoria": "physical", "poder": 75, "precision": 100 },
+        { "id": "shadow-ball", "nombre": "Bola Sombra", "tipo": "ghost", "categoria": "special", "poder": 80, "precision": 100 },
+        { "id": "grass-knot", "nombre": "Hierba Lazo", "tipo": "grass", "categoria": "special", "poder": 80, "precision": 100 },
+        { "id": "earthquake", "nombre": "Terremoto", "tipo": "ground", "categoria": "physical", "poder": 100, "precision": 100 },
+        { "id": "knock-off", "nombre": "Desarme", "tipo": "dark", "categoria": "physical", "poder": 65, "precision": 100 },
+        { "id": "body-slam", "nombre": "Golpe Cuerpo", "tipo": "normal", "categoria": "physical", "poder": 85, "precision": 100 }
+      ]
+    },
+    {
+      "id": "gengar",
+      "nombre": "Gengar",
+      "categoria": "ou",
+      "tier": "ou",
+      "tipos": ["ghost", "poison"],
+      "tipo1": "ghost",
+      "tipo2": "poison",
+      "estadisticas_base": {
+        "hp": 60,
+        "ataque": 65,
+        "defensa": 60,
+        "ataque_especial": 130,
+        "defensa_especial": 75,
+        "velocidad": 110
+      },
+      "stats": {
+        "hp": 60,
+        "atk": 65,
+        "def": 60,
+        "spa": 130,
+        "spd": 75,
+        "spe": 110
+      },
+      "habilidades": [
+        {
+          "id": "levitate",
+          "nombre": "Levitación",
+          "efecto": "Otorga inmunidad total a ataques de tipo Tierra, Púas y Terremotos (PokéMMO / Gen 3-6)."
+        },
+        {
+          "id": "cursed-body",
+          "nombre": "Cuerpo Maldito",
+          "efecto": "30% de probabilidad de anular el movimiento del rival al recibir un ataque de contacto."
+        }
+      ],
+      "movimientos": [
+        { "id": "shadow-ball", "nombre": "Bola Sombra", "tipo": "ghost", "categoria": "special", "poder": 80, "precision": 100 },
+        { "id": "sludge-bomb", "nombre": "Bomba Lodo", "tipo": "poison", "categoria": "special", "poder": 90, "precision": 100 },
+        { "id": "sludge-wave", "nombre": "Onda Tóxica", "tipo": "poison", "categoria": "special", "poder": 95, "precision": 100 },
+        { "id": "focus-blast", "nombre": "Onda Certera", "tipo": "fighting", "categoria": "special", "poder": 120, "precision": 70 },
+        { "id": "thunderbolt", "nombre": "Rayo", "tipo": "electric", "categoria": "special", "poder": 90, "precision": 100 },
+        { "id": "thunder", "nombre": "Trueno", "tipo": "electric", "categoria": "special", "poder": 110, "precision": 70 },
+        { "id": "dazzling-gleam", "nombre": "Brillo Mágico", "tipo": "fairy", "categoria": "special", "poder": 80, "precision": 100 },
+        { "id": "giga-drain", "nombre": "Gigadrenado", "tipo": "grass", "categoria": "special", "poder": 75, "precision": 100 },
+        { "id": "energy-ball", "nombre": "Energibola", "tipo": "grass", "categoria": "special", "poder": 90, "precision": 100 },
+        { "id": "psychic", "nombre": "Psíquico", "tipo": "psychic", "categoria": "special", "poder": 90, "precision": 100 },
+        { "id": "dark-pulse", "nombre": "Pulso Umbrío", "tipo": "dark", "categoria": "special", "poder": 80, "precision": 100 },
+        { "id": "icy-wind", "nombre": "Viento Hielo", "tipo": "ice", "categoria": "special", "poder": 55, "precision": 95 },
+        { "id": "night-shade", "nombre": "Tinieblas", "tipo": "ghost", "categoria": "special", "poder": 50, "precision": 100 },
+        { "id": "sucker-punch", "nombre": "Golpe Bajo", "tipo": "dark", "categoria": "physical", "poder": 70, "precision": 100, "priority": 1 },
+        { "id": "shadow-punch", "nombre": "Puño Sombra", "tipo": "ghost", "categoria": "physical", "poder": 60, "precision": 100 },
+        { "id": "poison-jab", "nombre": "Puya Nociva", "tipo": "poison", "categoria": "physical", "poder": 80, "precision": 100 },
+        { "id": "thunder-punch", "nombre": "Puño Trueno", "tipo": "electric", "categoria": "physical", "poder": 75, "precision": 100 },
+        { "id": "ice-punch", "nombre": "Puño Hielo", "tipo": "ice", "categoria": "physical", "poder": 75, "precision": 100 },
+        { "id": "fire-punch", "nombre": "Puño Fuego", "tipo": "fire", "categoria": "physical", "poder": 75, "precision": 100 }
+      ]
+    },
+    {
+      "id": "weezing",
+      "nombre": "Weezing",
+      "categoria": "ou",
+      "tier": "ou",
+      "tipos": ["poison"],
+      "tipo1": "poison",
+      "tipo2": "",
+      "estadisticas_base": {
+        "hp": 65,
+        "ataque": 90,
+        "defensa": 120,
+        "ataque_especial": 85,
+        "defensa_especial": 70,
+        "velocidad": 60
+      },
+      "stats": {
+        "hp": 65,
+        "atk": 90,
+        "def": 120,
+        "spa": 85,
+        "spd": 70,
+        "spe": 60
+      },
+      "habilidades": [
+        {
+          "id": "levitate",
+          "nombre": "Levitación",
+          "efecto": "Otorga inmunidad total a movimientos del tipo Tierra."
+        },
+        {
+          "id": "neutralizing-gas",
+          "nombre": "Gas Reactivo",
+          "efecto": "Neutraliza y desactiva las habilidades de todos los Pokémon en el combate mientras esté en el campo."
+        },
+        {
+          "id": "stench",
+          "nombre": "Hedor",
+          "efecto": "Tiene un 10% de probabilidad de amedrentar al rival al atacarlo."
+        }
+      ],
+      "movimientos": [
+        { "id": "sludge-bomb", "nombre": "Bomba Lodo", "tipo": "poison", "categoria": "special", "poder": 90, "precision": 100 },
+        { "id": "sludge-wave", "nombre": "Onda Tóxica", "tipo": "poison", "categoria": "special", "poder": 95, "precision": 100 },
+        { "id": "venoshock", "nombre": "Carga Tóxica", "tipo": "poison", "categoria": "special", "poder": 65, "precision": 100 },
+        { "id": "clear-smog", "nombre": "Niebla Clara", "tipo": "poison", "categoria": "special", "poder": 50, "precision": 100 },
+        { "id": "flamethrower", "nombre": "Lanzallamas", "tipo": "fire", "categoria": "special", "poder": 90, "precision": 100 },
+        { "id": "fire-blast", "nombre": "Llamarada", "tipo": "fire", "categoria": "special", "poder": 110, "precision": 85 },
+        { "id": "thunderbolt", "nombre": "Rayo", "tipo": "electric", "categoria": "special", "poder": 90, "precision": 100 },
+        { "id": "thunder", "nombre": "Trueno", "tipo": "electric", "categoria": "special", "poder": 110, "precision": 70 },
+        { "id": "dark-pulse", "nombre": "Pulso Umbrío", "tipo": "dark", "categoria": "special", "poder": 80, "precision": 100 },
+        { "id": "shadow-ball", "nombre": "Bola Sombra", "tipo": "ghost", "categoria": "special", "poder": 80, "precision": 100 },
+        { "id": "night-shade", "nombre": "Tinieblas", "tipo": "ghost", "categoria": "special", "poder": 50, "precision": 100 },
+        { "id": "explosion", "nombre": "Explosión", "tipo": "normal", "categoria": "physical", "poder": 250, "precision": 100 },
+        { "id": "self-destruct", "nombre": "Autodestrucción", "tipo": "normal", "categoria": "physical", "poder": 200, "precision": 100 },
+        { "id": "poison-jab", "nombre": "Puya Nociva", "tipo": "poison", "categoria": "physical", "poder": 80, "precision": 100 },
+        { "id": "gyro-ball", "nombre": "Giro Bola", "tipo": "steel", "categoria": "physical", "poder": 80, "precision": 100 }
+      ]
+    },
+    {
+      "id": "chansey",
+      "nombre": "Chansey",
+      "categoria": "ou",
+      "tier": "ou",
+      "tipos": ["normal"],
+      "tipo1": "normal",
+      "tipo2": "",
+      "estadisticas_base": {
+        "hp": 250,
+        "ataque": 5,
+        "defensa": 5,
+        "ataque_especial": 35,
+        "defensa_especial": 105,
+        "velocidad": 50
+      },
+      "stats": {
+        "hp": 250,
+        "atk": 5,
+        "def": 5,
+        "spa": 35,
+        "spd": 105,
+        "spe": 50
+      },
+      "habilidades": [
+        {
+          "id": "natural-cure",
+          "nombre": "Cura Natural",
+          "efecto": "Cura todos los problemas de estado alterado (parálisis, veneno, quemadura, sueño, congelación) al salir de combate."
+        },
+        {
+          "id": "serene-grace",
+          "nombre": "Dicha",
+          "efecto": "Duplica la probabilidad de que ocurran los efectos secundarios de los movimientos empleados."
+        },
+        {
+          "id": "healer",
+          "nombre": "Alma Cura",
+          "efecto": "Tiene un 30% de probabilidad de curar problemas de estado de los aliados en batallas dobles."
+        }
+      ],
+      "movimientos": [
+        { "id": "seismic-toss", "nombre": "Movimiento Sísmico", "tipo": "fighting", "categoria": "physical", "poder": 50, "precision": 100 },
+        { "id": "ice-beam", "nombre": "Rayo Hielo", "tipo": "ice", "categoria": "special", "poder": 90, "precision": 100 },
+        { "id": "blizzard", "nombre": "Ventisca", "tipo": "ice", "categoria": "special", "poder": 110, "precision": 70 },
+        { "id": "flamethrower", "nombre": "Lanzallamas", "tipo": "fire", "categoria": "special", "poder": 90, "precision": 100 },
+        { "id": "fire-blast", "nombre": "Llamarada", "tipo": "fire", "categoria": "special", "poder": 110, "precision": 85 },
+        { "id": "thunderbolt", "nombre": "Rayo", "tipo": "electric", "categoria": "special", "poder": 90, "precision": 100 },
+        { "id": "thunder", "nombre": "Trueno", "tipo": "electric", "categoria": "special", "poder": 110, "precision": 70 },
+        { "id": "psychic", "nombre": "Psíquico", "tipo": "psychic", "categoria": "special", "poder": 90, "precision": 100 },
+        { "id": "psyshock", "nombre": "Psicocarga", "tipo": "psychic", "categoria": "special", "poder": 80, "precision": 100 },
+        { "id": "shadow-ball", "nombre": "Bola Sombra", "tipo": "ghost", "categoria": "special", "poder": 80, "precision": 100 },
+        { "id": "hyper-voice", "nombre": "Vozarrón", "tipo": "normal", "categoria": "special", "poder": 90, "precision": 100 },
+        { "id": "tri-attack", "nombre": "Triataque", "tipo": "normal", "categoria": "special", "poder": 80, "precision": 100 },
+        { "id": "body-slam", "nombre": "Golpe Cuerpo", "tipo": "normal", "categoria": "physical", "poder": 85, "precision": 100 },
+        { "id": "double-edge", "nombre": "Doble Filo", "tipo": "normal", "categoria": "physical", "poder": 120, "precision": 100 }
+      ]
+    },
+    {
+      "id": "starmie",
+      "nombre": "Starmie",
+      "categoria": "ou",
+      "tier": "ou",
+      "tipos": ["water", "psychic"],
+      "tipo1": "water",
+      "tipo2": "psychic",
+      "estadisticas_base": {
+        "hp": 60,
+        "ataque": 75,
+        "defensa": 85,
+        "ataque_especial": 100,
+        "defensa_especial": 85,
+        "velocidad": 115
+      },
+      "stats": {
+        "hp": 60,
+        "atk": 75,
+        "def": 85,
+        "spa": 100,
+        "spd": 85,
+        "spe": 115
+      },
+      "habilidades": [
+        {
+          "id": "natural-cure",
+          "nombre": "Cura Natural",
+          "efecto": "Sana problemas de estado persistentes al ser retirado del combate."
+        },
+        {
+          "id": "illuminate",
+          "nombre": "Iluminación",
+          "efecto": "Evita que la precisión de este Pokémon sea reducida por ataques o efectos adversos."
+        },
+        {
+          "id": "analytic",
+          "nombre": "Cálculo Final (Analítico)",
+          "efecto": "Aumenta la potencia de los movimientos en un 30% (×1,3) si ataca en segundo lugar o después del objetivo."
+        }
+      ],
+      "movimientos": [
+        { "id": "hydro-pump", "nombre": "Hidrobomba", "tipo": "water", "categoria": "special", "poder": 110, "precision": 80 },
+        { "id": "surf", "nombre": "Surf", "tipo": "water", "categoria": "special", "poder": 90, "precision": 100 },
+        { "id": "scald", "nombre": "Escaldar", "tipo": "water", "categoria": "special", "poder": 80, "precision": 100 },
+        { "id": "brine", "nombre": "Salmuera", "tipo": "water", "categoria": "special", "poder": 65, "precision": 100 },
+        { "id": "waterfall", "nombre": "Cascada", "tipo": "water", "categoria": "physical", "poder": 80, "precision": 100 },
+        { "id": "psychic", "nombre": "Psíquico", "tipo": "psychic", "categoria": "special", "poder": 90, "precision": 100 },
+        { "id": "psyshock", "nombre": "Psicocarga", "tipo": "psychic", "categoria": "special", "poder": 80, "precision": 100 },
+        { "id": "ice-beam", "nombre": "Rayo Hielo", "tipo": "ice", "categoria": "special", "poder": 90, "precision": 100 },
+        { "id": "blizzard", "nombre": "Ventisca", "tipo": "ice", "categoria": "special", "poder": 110, "precision": 70 },
+        { "id": "thunderbolt", "nombre": "Rayo", "tipo": "electric", "categoria": "special", "poder": 90, "precision": 100 },
+        { "id": "thunder", "nombre": "Trueno", "tipo": "electric", "categoria": "special", "poder": 110, "precision": 70 },
+        { "id": "dazzling-gleam", "nombre": "Brillo Mágico", "tipo": "fairy", "categoria": "special", "poder": 80, "precision": 100 },
+        { "id": "power-gem", "nombre": "Joya de Luz", "tipo": "rock", "categoria": "special", "poder": 80, "precision": 100 },
+        { "id": "grass-knot", "nombre": "Hierba Lazo", "tipo": "grass", "categoria": "special", "poder": 80, "precision": 100 },
+        { "id": "shadow-ball", "nombre": "Bola Sombra", "tipo": "ghost", "categoria": "special", "poder": 80, "precision": 100 },
+        { "id": "rapid-spin", "nombre": "Giro Rápido", "tipo": "normal", "categoria": "physical", "poder": 50, "precision": 100 }
+      ]
+    }
+  ]
+}

@@ -1,6 +1,8 @@
 export const pokemonIniciales: {
   id: string;
   nombre: string;
+  tier?: string;
+  categoria?: string;
   tipo1: string;
   tipo2: string;
   hp: number;
@@ -9,6 +11,11 @@ export const pokemonIniciales: {
   spa: number;
   spd: number;
   spe: number;
+  nature?: string;
+  item?: string;
+  ability?: string;
+  abilities?: string[];
+  learnset?: string[];
 }[];
 
 export const movimientosIniciales: {

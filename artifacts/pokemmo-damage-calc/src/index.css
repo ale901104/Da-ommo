@@ -581,6 +581,36 @@
 .app-shell[data-theme="dark"] .tiny-action.delete {background:#513b3c;color:#f1beb5;}
 .app-shell[data-theme="dark"] .btn-muted {background:#304b51;color:#d5e6e2;}
 .app-shell[data-theme="dark"] .drawer-link:hover,.app-shell[data-theme="dark"] .drawer-link.active {background:rgba(98,153,132,.2);color:#bfe9d4;}
+
+/* Tier Submenu in Drawer */
+.drawer-submenu {display:flex;flex-direction:column;gap:8px;margin-top:8px;padding-left:2px;}
+.tier-group {border-radius:12px;background:rgba(255,255,255,.45);border:1px solid rgba(122,157,161,.22);overflow:hidden;transition:all .18s ease;}
+.tier-group-header {width:100%;display:flex;justify-content:space-between;align-items:center;border:0;background:transparent;padding:9px 10px;color:#355761;font-size:12px;font-weight:700;cursor:pointer;}
+.tier-group-header:hover {background:rgba(166,211,195,.22);}
+.tier-chip {display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;padding:2px 6px;border-radius:6px;letter-spacing:.04em;font-family:var(--app-font-mono);}
+.tier-chip-ou {background:#fee2e2;color:#991b1b;border:1px solid #f87171;}
+.tier-chip-uu {background:#e0e7ff;color:#3730a3;border:1px solid #818cf8;}
+.tier-chip-nu {background:#ccfbf1;color:#115e59;border:1px solid #2dd4bf;}
+.tier-count {font-size:11px;font-family:var(--app-font-mono);background:rgba(0,0,0,.06);padding:1px 6px;border-radius:8px;color:#557279;}
+.tier-options {display:flex;flex-direction:column;gap:2px;padding:4px 6px 8px;background:rgba(255,255,255,.3);border-top:1px solid rgba(122,157,161,.15);}
+.tier-options .drawer-link {padding:7px 8px;font-size:11.5px;border-radius:8px;}
+.tier-options .drawer-link:hover {background:rgba(166,211,195,.35);color:#1d554a;}
+.tier-modal-tabs {display:flex;gap:6px;margin-bottom:14px;background:rgba(0,0,0,.05);padding:4px;border-radius:12px;}
+.tier-modal-tab {flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 10px;border:0;border-radius:9px;font-size:11.5px;font-weight:700;background:transparent;color:#56737b;cursor:pointer;transition:all .15s ease;}
+.tier-modal-tab.active {background:#ffffff;color:#1d554a;box-shadow:0 2px 8px rgba(0,0,0,.08);}
+
+.app-shell[data-theme="dark"] .tier-group {background:rgba(30,50,56,.7);border-color:rgba(174,206,205,.16);}
+.app-shell[data-theme="dark"] .tier-group-header {color:#e4efed;}
+.app-shell[data-theme="dark"] .tier-group-header:hover {background:rgba(98,153,132,.2);}
+.app-shell[data-theme="dark"] .tier-chip-ou {background:rgba(153,27,27,.35);color:#fca5a5;border-color:#ef4444;}
+.app-shell[data-theme="dark"] .tier-chip-uu {background:rgba(55,48,163,.35);color:#c7d2fe;border-color:#6366f1;}
+.app-shell[data-theme="dark"] .tier-chip-nu {background:rgba(17,94,89,.35);color:#99f6e4;border-color:#14b8a6;}
+.app-shell[data-theme="dark"] .tier-count {background:rgba(255,255,255,.1);color:#c3d5d1;}
+.app-shell[data-theme="dark"] .tier-options {background:rgba(22,38,43,.5);border-top-color:rgba(174,206,205,.12);}
+.app-shell[data-theme="dark"] .tier-modal-tabs {background:rgba(255,255,255,.06);}
+.app-shell[data-theme="dark"] .tier-modal-tab {color:#a4b8b7;}
+.app-shell[data-theme="dark"] .tier-modal-tab.active {background:rgba(37,59,65,.95);color:#8be0bc;}
+
 @keyframes slide-in {from{transform:translateX(-20px);opacity:.7}to{transform:translateX(0);opacity:1}}
 @keyframes rise-in {from{transform:translateY(14px);opacity:.75}to{transform:translateY(0);opacity:1}}
 @media (prefers-reduced-motion: reduce) { *,*::before,*::after {animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important;} }

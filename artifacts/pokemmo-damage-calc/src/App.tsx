@@ -37,9 +37,12 @@ import {
   TYPES,
   TypeBadge,
   typeName,
+  getPokemonAbilities,
+  getPokemonMoves,
   type CustomAbility,
   type Move,
   type Pokemon,
+  type PokemonTier,
   type StageKey,
   type StageValues,
   type StatKey,
@@ -50,7 +53,8 @@ import { WeatherBackground } from './components/weather-background';
 
 type ModalKind = 'pokemon' | 'movimiento' | 'apk-guide' | 'ivev-attacker' | 'ivev-defender' | null;
 type Weather = 'none' | 'sun' | 'rain' | 'sand' | 'hail';
-type Field = 'none' | 'reflect' | 'light-screen' | 'aurora-veil' | 'tailwind';
+type Field = 'none' | 'reflect' | 'light-screen' | 'tailwind';
+type FieldSide = 'both' | 'attacker' | 'defender';
 type BackgroundChoice = 'mint' | 'dusk' | 'aurora' | 'custom';
 type ThemeChoice = 'light' | 'dark';
 
@@ -104,8 +108,13 @@ const fieldOptions: [Field, string][] = [
   ['none', 'Sin efecto'],
   ['reflect', 'Reflejo (Físico -50%)'],
   ['light-screen', 'Pantalla de Luz (Esp. -50%)'],
-  ['aurora-veil', 'Velo Aurora (Ambos -50%)'],
   ['tailwind', 'Viento Afín (Velocidad ×2)'],
+];
+
+const fieldSideOptions: [FieldSide, string][] = [
+  ['both', 'Ambos campos'],
+  ['attacker', 'Campo atacante'],
+  ['defender', 'Campo defensor'],
 ];
 
 function safeInteger(value: unknown, fallback: number, min: number, max: number) {
@@ -143,60 +152,183 @@ function normalizePokemon(value: unknown): Pokemon {
   const statDefaults: StatValues = { hp: 80, atk: 100, def: 80, spa: 80, spd: 80, spe: 80 };
   const nature = typeof row.nature === 'string' && NATURES.some(([id]) => id === row.nature) ? row.nature : 'adamant';
   const item = typeof row.item === 'string' && ITEMS.some(([id]) => id === row.item) ? row.item : 'none';
+  const rawTier = typeof row.tier === 'string' ? row.tier : typeof row.categoria === 'string' ? row.categoria : 'ou';
+  const tier: PokemonTier = ['ou', 'uu', 'nu'].includes(rawTier.toLowerCase()) ? (rawTier.toLowerCase() as PokemonTier) : 'ou';
+
+  // Extract base stats supporting direct or stats/baseStats nested fields
+  const statsObj = (row.baseStats && typeof row.baseStats === 'object'
+    ? row.baseStats
+    : row.estadisticas_base && typeof row.estadisticas_base === 'object'
+    ? row.estadisticas_base
+    : row.stats && typeof row.stats === 'object'
+    ? row.stats
+    : row) as Record<string, unknown>;
+
+  // Extract abilities supporting both string IDs and object { id, nombre }
+  let abilities: string[] = [];
+  if (Array.isArray(row.abilities)) {
+    abilities = (row.abilities as unknown[]).map(a => (typeof a === 'string' ? a : (a as Record<string, unknown>)?.id)).filter(Boolean) as string[];
+  } else if (Array.isArray(row.habilidades)) {
+    abilities = (row.habilidades as unknown[]).map(a => (typeof a === 'string' ? a : (a as Record<string, unknown>)?.id)).filter(Boolean) as string[];
+  }
+
+  // Extract learnset supporting both string IDs and object { id, nombre }
+  let learnset: string[] = [];
+  if (Array.isArray(row.learnset)) {
+    learnset = (row.learnset as unknown[]).map(m => (typeof m === 'string' ? m : (m as Record<string, unknown>)?.id)).filter(Boolean) as string[];
+  } else if (Array.isArray(row.movimientos)) {
+    learnset = (row.movimientos as unknown[]).map(m => (typeof m === 'string' ? m : (m as Record<string, unknown>)?.id)).filter(Boolean) as string[];
+  }
+
   return {
     id: typeof row.id === 'string' ? row.id : `pk-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     nombre: typeof row.nombre === 'string' ? row.nombre.slice(0, 24) : 'Pokémon',
+    tier,
     tipo1: typeof row.tipo1 === 'string' && TYPES.some(([id]) => id === row.tipo1) ? row.tipo1 : 'normal',
     tipo2: typeof row.tipo2 === 'string' && TYPES.some(([id]) => id === row.tipo2) ? row.tipo2 : '',
-    hp: safeInteger(row.hp, statDefaults.hp, 1, 255),
-    atk: safeInteger(row.atk, statDefaults.atk, 1, 255),
-    def: safeInteger(row.def, statDefaults.def, 1, 255),
-    spa: safeInteger(row.spa, statDefaults.spa, 1, 255),
-    spd: safeInteger(row.spd, statDefaults.spd, 1, 255),
-    spe: safeInteger(row.spe, statDefaults.spe, 1, 255),
+    hp: safeInteger(statsObj.hp ?? row.hp, statDefaults.hp, 1, 255),
+    atk: safeInteger(statsObj.atk ?? statsObj.ataque ?? row.atk, statDefaults.atk, 1, 255),
+    def: safeInteger(statsObj.def ?? statsObj.defensa ?? row.def, statDefaults.def, 1, 255),
+    spa: safeInteger(statsObj.spa ?? statsObj.ataque_especial ?? row.spa, statDefaults.spa, 1, 255),
+    spd: safeInteger(statsObj.spd ?? statsObj.defensa_especial ?? row.spd, statDefaults.spd, 1, 255),
+    spe: safeInteger(statsObj.spe ?? statsObj.velocidad ?? row.spe, statDefaults.spe, 1, 255),
     ivs: normalizeStatValues(row.ivs, DEFAULT_IVS, 0, 31),
     evs: normalizeStatValues(row.evs, DEFAULT_EVS, 0, 252),
     nature,
     item,
-    ability: typeof row.ability === 'string' ? row.ability : 'none',
+    ability: typeof row.ability === 'string' && row.ability !== 'none' ? row.ability : abilities[0] || 'none',
+    abilities,
+    learnset,
     finalEvolution: typeof row.finalEvolution === 'boolean' ? row.finalEvolution : true,
     boosts: normalizeBoostValues(row.boosts),
   };
 }
 
 function loadSaved() {
+  const initialPkList = (pokemonIniciales as unknown[]).map(normalizePokemon);
+  const initialPkMap = new Map(initialPkList.map(p => [p.id, p]));
+  const initialMvList = (movimientosIniciales as unknown[]).map(normalizeMove);
+  const initialMvMap = new Map(initialMvList.map(m => [m.id, m]));
+
+  let equipoOU: Pokemon[] = [];
+  let equipoUU: Pokemon[] = [];
+  let equipoNU: Pokemon[] = [];
+  let movimientos: Move[] = [...initialMvList];
+  let habilidades: CustomAbility[] = [];
+  let background: BackgroundChoice = 'mint';
+  let customBackground = '';
+  let theme: ThemeChoice = 'light';
+
+  const rawOU = localStorage.getItem('equipoOU');
+  const rawUU = localStorage.getItem('equipoUU');
+  const rawNU = localStorage.getItem('equipoNU');
+
+  if (rawOU !== null || rawUU !== null || rawNU !== null) {
+    if (rawOU) {
+      try {
+        const parsed = JSON.parse(rawOU);
+        if (Array.isArray(parsed)) equipoOU = parsed.map(p => normalizePokemon({ ...p, tier: 'ou' }));
+      } catch {
+        // ignore
+      }
+    }
+    if (rawUU) {
+      try {
+        const parsed = JSON.parse(rawUU);
+        if (Array.isArray(parsed)) equipoUU = parsed.map(p => normalizePokemon({ ...p, tier: 'uu' }));
+      } catch {
+        // ignore
+      }
+    }
+    if (rawNU) {
+      try {
+        const parsed = JSON.parse(rawNU);
+        if (Array.isArray(parsed)) equipoNU = parsed.map(p => normalizePokemon({ ...p, tier: 'nu' }));
+      } catch {
+        // ignore
+      }
+    }
+  } else {
+    // Migration from legacy single-list storage if any exists
+    try {
+      const stored = localStorage.getItem('pokemmo-calc-v3') || localStorage.getItem(STORAGE_KEY) || localStorage.getItem('pokemmo-calc-v1');
+      if (stored) {
+        const parsed = JSON.parse(stored) as Record<string, unknown>;
+        if (Array.isArray(parsed.pokemon)) {
+          for (const item of parsed.pokemon) {
+            const p = normalizePokemon(item);
+            if (p.tier === 'uu') equipoUU.push(p);
+            else if (p.tier === 'nu') equipoNU.push(p);
+            else equipoOU.push({ ...p, tier: 'ou' });
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Ensure default Pokémon are present in equipoOU
+  if (equipoOU.length === 0) {
+    equipoOU = initialPkList.map(p => ({ ...p, tier: 'ou' as PokemonTier }));
+  } else {
+    const allIds = new Set([...equipoOU, ...equipoUU, ...equipoNU].map(p => p.id));
+    for (const [id, def] of initialPkMap.entries()) {
+      if (!allIds.has(id)) {
+        equipoOU.push(def);
+      }
+    }
+  }
+
+  // Load other persistent settings
   try {
-    const stored = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('pokemmo-calc-v1');
+    const stored = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('pokemmo-calc-v3') || localStorage.getItem('pokemmo-calc-v1');
     if (stored) {
       const parsed = JSON.parse(stored) as Record<string, unknown>;
-      if (Array.isArray(parsed.pokemon) && Array.isArray(parsed.movimientos)) {
-        const background = ['mint', 'dusk', 'aurora', 'custom'].includes(String(parsed.background))
-          ? (parsed.background as BackgroundChoice)
-          : 'mint';
-        const customBackground =
-          typeof parsed.customBackground === 'string' && parsed.customBackground.startsWith('data:image/')
-            ? parsed.customBackground
-            : '';
-        return {
-          pokemon: parsed.pokemon.map(normalizePokemon),
-          movimientos: parsed.movimientos.map(normalizeMove),
-          habilidades: Array.isArray(parsed.habilidades) ? (parsed.habilidades as CustomAbility[]) : [],
-          background,
-          customBackground,
-          theme: parsed.theme === 'dark' ? ('dark' as ThemeChoice) : ('light' as ThemeChoice),
-        };
+      if (Array.isArray(parsed.movimientos)) {
+        const savedMv = parsed.movimientos.map(normalizeMove);
+        const combinedMv = [...savedMv];
+        const seenMv = new Set(savedMv.map(m => m.id));
+        for (const [id, mv] of initialMvMap.entries()) {
+          if (!seenMv.has(id)) combinedMv.push(mv);
+        }
+        movimientos = combinedMv;
+      }
+      if (Array.isArray(parsed.habilidades)) {
+        habilidades = parsed.habilidades as CustomAbility[];
+      }
+      if (['mint', 'dusk', 'aurora', 'custom'].includes(String(parsed.background))) {
+        background = parsed.background as BackgroundChoice;
+      }
+      if (typeof parsed.customBackground === 'string' && parsed.customBackground.startsWith('data:image/')) {
+        customBackground = parsed.customBackground;
+      }
+      if (parsed.theme === 'dark') {
+        theme = 'dark';
       }
     }
   } catch {
-    // fallback
+    // ignore
   }
+
+  // Immediately ensure separate LocalStorage keys are written
+  try {
+    localStorage.setItem('equipoOU', JSON.stringify(equipoOU));
+    localStorage.setItem('equipoUU', JSON.stringify(equipoUU));
+    localStorage.setItem('equipoNU', JSON.stringify(equipoNU));
+  } catch {
+    // ignore
+  }
+
   return {
-    pokemon: (pokemonIniciales as unknown[]).map(normalizePokemon),
-    movimientos: (movimientosIniciales as unknown[]).map(normalizeMove),
-    habilidades: [] as CustomAbility[],
-    background: 'mint' as BackgroundChoice,
-    customBackground: '',
-    theme: 'light' as ThemeChoice,
+    equipoOU,
+    equipoUU,
+    equipoNU,
+    movimientos,
+    habilidades,
+    background,
+    customBackground,
+    theme,
   };
 }
 
@@ -269,15 +401,22 @@ function compressBackground(file: File): Promise<string> {
 
 function App() {
   const initial = useMemo(loadSaved, []);
-  const [pokemon, setPokemon] = useState<Pokemon[]>(initial.pokemon);
+  const [equipoOU, setEquipoOU] = useState<Pokemon[]>(initial.equipoOU);
+  const [equipoUU, setEquipoUU] = useState<Pokemon[]>(initial.equipoUU);
+  const [equipoNU, setEquipoNU] = useState<Pokemon[]>(initial.equipoNU);
   const [moves, setMoves] = useState<Move[]>(initial.movimientos);
   const [customAbilities, setCustomAbilities] = useState<CustomAbility[]>(initial.habilidades);
   const [background, setBackground] = useState<BackgroundChoice>(initial.background);
   const [customBackground, setCustomBackground] = useState(initial.customBackground);
   const [theme, setTheme] = useState<ThemeChoice>(initial.theme);
 
-  const [attackerId, setAttackerId] = useState(initial.pokemon[0]?.id ?? '');
-  const [defenderId, setDefenderId] = useState(initial.pokemon[1]?.id ?? initial.pokemon[0]?.id ?? '');
+  // Combined pokemon list for calculation lookups
+  const pokemon = useMemo(() => {
+    return [...equipoOU, ...equipoUU, ...equipoNU];
+  }, [equipoOU, equipoUU, equipoNU]);
+
+  const [attackerId, setAttackerId] = useState(initial.equipoOU[0]?.id ?? '');
+  const [defenderId, setDefenderId] = useState(initial.equipoOU[1]?.id ?? initial.equipoOU[0]?.id ?? '');
   const [moveId, setMoveId] = useState(initial.movimientos[0]?.id ?? '');
 
   const [attackerLevel, setAttackerLevel] = useState(50);
@@ -292,9 +431,13 @@ function App() {
   const [burned, setBurned] = useState(false);
   const [lowHp, setLowHp] = useState(false);
   const [field, setField] = useState<Field>('none');
+  const [fieldSide, setFieldSide] = useState<FieldSide>('both');
 
   const [drawer, setDrawer] = useState(false);
   const [openSections, setOpenSections] = useState({ pokemon: true, moves: false, abilities: false, backgrounds: false });
+  const [openTiers, setOpenTiers] = useState<{ ou: boolean; uu: boolean; nu: boolean }>({ ou: true, uu: false, nu: false });
+  const [activeTier, setActiveTier] = useState<'ou' | 'uu' | 'nu'>('ou');
+  const [tierViewMode, setTierViewMode] = useState<'form' | 'list'>('list');
   const [modal, setModal] = useState<ModalKind>(null);
   const [editing, setEditing] = useState<Pokemon | Move | null>(null);
   const [toast, setToast] = useState('');
@@ -302,13 +445,36 @@ function App() {
   // PWA Install hook
   const { isInstallable, isInstalled, install } = usePWAInstall();
 
-  // Save changes locally
+  // Save changes locally in separated lists for each tier (equipoOU, equipoUU, equipoNU)
+  useEffect(() => {
+    try {
+      localStorage.setItem('equipoOU', JSON.stringify(equipoOU));
+    } catch {
+      setToast('No se pudo guardar el equipo OU.');
+    }
+  }, [equipoOU]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('equipoUU', JSON.stringify(equipoUU));
+    } catch {
+      setToast('No se pudo guardar el equipo UU.');
+    }
+  }, [equipoUU]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('equipoNU', JSON.stringify(equipoNU));
+    } catch {
+      setToast('No se pudo guardar el equipo NU.');
+    }
+  }, [equipoNU]);
+
   useEffect(() => {
     try {
       localStorage.setItem(
         STORAGE_KEY,
         JSON.stringify({
-          pokemon,
           movimientos: moves,
           habilidades: customAbilities,
           background,
@@ -317,9 +483,9 @@ function App() {
         }),
       );
     } catch {
-      setToast('No se pudo guardar en almacenamiento local.');
+      setToast('No se pudo guardar la configuración.');
     }
-  }, [pokemon, moves, customAbilities, background, customBackground, theme]);
+  }, [moves, customAbilities, background, customBackground, theme]);
 
   useEffect(() => {
     if (toast) {
@@ -343,18 +509,91 @@ function App() {
   const defender = pokemon.find(p => p.id === defenderId);
   const move = moves.find(m => m.id === moveId);
 
-  // Sync abilities from pokemon if set
+  // Allowed abilities strictly based on selected Pokémon
+  const attackerAllowedAbilities = useMemo(() => {
+    return getPokemonAbilities(attacker);
+  }, [attacker]);
+
+  const defenderAllowedAbilities = useMemo(() => {
+    return getPokemonAbilities(defender);
+  }, [defender]);
+
+  // Allowed moves strictly based on attacker's learnset
+  const attackerAllowedMoves = useMemo(() => {
+    return getPokemonMoves(attacker, moves);
+  }, [attacker, moves]);
+
+  // Grouped Pokémon by Tier (OU, UU, NU, Custom)
+  const ouPokemon = equipoOU;
+  const uuPokemon = equipoUU;
+  const nuPokemon = equipoNU;
+  const customPokemon: Pokemon[] = [];
+
+  function openAddPokemonForTier(tier: 'ou' | 'uu' | 'nu') {
+    setActiveTier(tier);
+    setEditing(null);
+    setTierViewMode('form');
+    setModal('pokemon');
+  }
+
+  function openManageTeamForTier(tier: 'ou' | 'uu' | 'nu') {
+    setActiveTier(tier);
+    setEditing(null);
+    setTierViewMode('list');
+    setModal('pokemon');
+  }
+
+  // Automatically update and clean abilities when Pokémon changes
   useEffect(() => {
-    if (attacker?.ability && attacker.ability !== 'none') {
-      setAttackerAbility(attacker.ability);
+    if (attackerAllowedAbilities.length > 0) {
+      const exists = attackerAllowedAbilities.some(([id]) => id === attackerAbility);
+      if (!exists) {
+        setAttackerAbility(attackerAllowedAbilities[0][0]);
+      }
     }
-  }, [attacker?.id]);
+  }, [attackerAllowedAbilities, attackerAbility]);
 
   useEffect(() => {
-    if (defender?.ability && defender.ability !== 'none') {
-      setDefenderAbility(defender.ability);
+    if (defenderAllowedAbilities.length > 0) {
+      const exists = defenderAllowedAbilities.some(([id]) => id === defenderAbility);
+      if (!exists) {
+        setDefenderAbility(defenderAllowedAbilities[0][0]);
+      }
     }
-  }, [defender?.id]);
+  }, [defenderAllowedAbilities, defenderAbility]);
+
+  // Automatically update and clean moves when Attacker changes
+  useEffect(() => {
+    if (attackerAllowedMoves.length > 0) {
+      const exists = attackerAllowedMoves.some(m => m.id === moveId);
+      if (!exists) {
+        setMoveId(attackerAllowedMoves[0].id);
+      }
+    }
+  }, [attackerAllowedMoves, moveId]);
+
+  // Handlers for switching Pokémon with automatic clearing and loading of abilities & moves
+  const handleAttackerChange = (newId: string) => {
+    setAttackerId(newId);
+    const nextPk = pokemon.find(p => p.id === newId);
+    if (nextPk) {
+      const nextAbilities = getPokemonAbilities(nextPk);
+      setAttackerAbility(nextAbilities[0]?.[0] ?? 'none');
+      const nextMoves = getPokemonMoves(nextPk, moves);
+      if (nextMoves.length > 0) {
+        setMoveId(nextMoves[0].id);
+      }
+    }
+  };
+
+  const handleDefenderChange = (newId: string) => {
+    setDefenderId(newId);
+    const nextPk = pokemon.find(p => p.id === newId);
+    if (nextPk) {
+      const nextAbilities = getPokemonAbilities(nextPk);
+      setDefenderAbility(nextAbilities[0]?.[0] ?? 'none');
+    }
+  };
 
   const customAbility = customAbilities.find(candidate => attackerAbility === `custom-${candidate.id}`);
   const customAbilityMatches = !customAbility?.moveId || customAbility.moveId === move?.id;
@@ -392,7 +631,11 @@ function App() {
       atkAbilityNote = 'Quitanieves (×2)';
     }
 
-    const atkFieldMod = field === 'tailwind' ? 2 : 1;
+    const attackerHasTailwind = field === 'tailwind' && (fieldSide === 'attacker' || fieldSide === 'both');
+    const atkFieldMod = attackerHasTailwind ? 2 : 1;
+    let atkFieldNote = attackerHasTailwind
+      ? (fieldSide === 'both' ? 'Viento Afín en ambos (×2)' : 'Viento Afín en campo propio (×2)')
+      : '';
     const finalAttackerSpe = Math.floor(stagedAttackerSpe * atkItemMod * atkAbilityMod * atkFieldMod);
 
     // Defender speed
@@ -424,7 +667,12 @@ function App() {
       defAbilityNote = 'Quitanieves (×2)';
     }
 
-    const finalDefenderSpe = Math.floor(stagedDefenderSpe * defItemMod * defAbilityMod);
+    const defenderHasTailwind = field === 'tailwind' && (fieldSide === 'defender' || fieldSide === 'both');
+    const defFieldMod = defenderHasTailwind ? 2 : 1;
+    let defFieldNote = defenderHasTailwind
+      ? (fieldSide === 'both' ? 'Viento Afín en ambos (×2)' : 'Viento Afín en campo rival (×2)')
+      : '';
+    const finalDefenderSpe = Math.floor(stagedDefenderSpe * defItemMod * defAbilityMod * defFieldMod);
 
     // Priority Check
     const movePriority = move?.priority ?? (
@@ -476,10 +724,12 @@ function App() {
       defenderBarPct: (finalDefenderSpe / maxSpeed) * 100,
       atkItemNote,
       atkAbilityNote,
+      atkFieldNote,
       defItemNote,
       defAbilityNote,
+      defFieldNote,
     };
-  }, [attacker, defender, move, attackerLevel, defenderLevel, attackerAbility, defenderAbility, weather, field]);
+  }, [attacker, defender, move, attackerLevel, defenderLevel, attackerAbility, defenderAbility, weather, field, fieldSide]);
 
   // --- Damage Calculation ---
   const calc = useMemo(() => {
@@ -531,18 +781,21 @@ function App() {
     }
 
     let eff = effectiveness(move.tipo, defender);
+    const gasActive = attackerAbility === 'neutralizing-gas' || defenderAbility === 'neutralizing-gas';
 
-    // Defender type immunities via Abilities
-    if (defenderAbility === 'levitate' && move.tipo === 'ground') eff = 0;
-    if (defenderAbility === 'water-absorb' && move.tipo === 'water') eff = 0;
-    if (defenderAbility === 'flash-fire' && move.tipo === 'fire') eff = 0;
-    if (defenderAbility === 'volt-absorb' && move.tipo === 'electric') eff = 0;
-    if (defenderAbility === 'sap-sipper' && move.tipo === 'grass') eff = 0;
-    if (defenderAbility === 'wonder-guard' && eff <= 1) eff = 0;
+    // Defender type immunities via Abilities (if not suppressed by Neutralizing Gas)
+    if (!gasActive) {
+      if (defenderAbility === 'levitate' && move.tipo === 'ground') eff = 0;
+      if (defenderAbility === 'water-absorb' && move.tipo === 'water') eff = 0;
+      if (defenderAbility === 'flash-fire' && move.tipo === 'fire') eff = 0;
+      if (defenderAbility === 'volt-absorb' && move.tipo === 'electric') eff = 0;
+      if (defenderAbility === 'sap-sipper' && move.tipo === 'grass') eff = 0;
+      if (defenderAbility === 'wonder-guard' && eff <= 1) eff = 0;
+    }
 
     const stab =
       attacker.tipo1 === move.tipo || attacker.tipo2 === move.tipo
-        ? attackerAbility === 'adaptability'
+        ? !gasActive && attackerAbility === 'adaptability'
           ? 2
           : 1.5
         : 1;
@@ -552,18 +805,22 @@ function App() {
     if ((weather === 'sun' && move.tipo === 'water') || (weather === 'rain' && move.tipo === 'fire')) weatherMod = 0.5;
 
     let abilityMod = 1;
-    if (attackerAbility === 'technician' && move.poder <= 60) abilityMod = 1.5;
-    if (attackerAbility === 'sheer-force') abilityMod = 1.3;
-    if (attackerAbility === 'tinted-lens' && eff < 1 && eff > 0) abilityMod = 2;
+    if (!gasActive) {
+      if (attackerAbility === 'technician' && move.poder <= 60) abilityMod = 1.5;
+      if (attackerAbility === 'sheer-force') abilityMod = 1.3;
+      if (attackerAbility === 'tinted-lens' && eff < 1 && eff > 0) abilityMod = 2;
+      // Starmie Analytic: +30% boost if moving after defender
+      if (attackerAbility === 'analytic' && speedCalc?.winner === 'defender') abilityMod = 1.3;
 
-    if (
-      lowHp &&
-      ((attackerAbility === 'blaze' && move.tipo === 'fire') ||
-        (attackerAbility === 'torrent' && move.tipo === 'water') ||
-        (attackerAbility === 'overgrow' && move.tipo === 'grass') ||
-        (attackerAbility === 'swarm' && move.tipo === 'bug'))
-    ) {
-      abilityMod = 1.5;
+      if (
+        lowHp &&
+        ((attackerAbility === 'blaze' && move.tipo === 'fire') ||
+          (attackerAbility === 'torrent' && move.tipo === 'water') ||
+          (attackerAbility === 'overgrow' && move.tipo === 'grass') ||
+          (attackerAbility === 'swarm' && move.tipo === 'bug'))
+      ) {
+        abilityMod = 1.5;
+      }
     }
 
     if (customAbility?.effect === 'damage' && customAbilityMatches) {
@@ -572,14 +829,16 @@ function App() {
 
     // Defender Ability Reductions
     let defenderAbilityMod = 1;
-    if (defenderAbility === 'thick-fat' && (move.tipo === 'fire' || move.tipo === 'ice')) {
-      defenderAbilityMod *= 0.5;
-    }
-    if (defenderAbility === 'multiscale') {
-      defenderAbilityMod *= 0.5;
-    }
-    if ((defenderAbility === 'solid-rock' || defenderAbility === 'filter') && eff > 1) {
-      defenderAbilityMod *= 0.75;
+    if (!gasActive) {
+      if (defenderAbility === 'thick-fat' && (move.tipo === 'fire' || move.tipo === 'ice')) {
+        defenderAbilityMod *= 0.5;
+      }
+      if (defenderAbility === 'multiscale') {
+        defenderAbilityMod *= 0.5;
+      }
+      if ((defenderAbility === 'solid-rock' || defenderAbility === 'filter') && eff > 1) {
+        defenderAbilityMod *= 0.75;
+      }
     }
 
     let itemStatMod = 1;
@@ -606,10 +865,13 @@ function App() {
     let itemPower = attacker.item === `${move.tipo}-gem` ? 1.3 : attacker.item === 'life-orb' ? 1.3 : 1;
     if (attacker.item === 'expert-belt' && eff > 1) itemPower = 1.2;
 
+    const defenderHasScreen =
+      !critical && (fieldSide === 'defender' || fieldSide === 'both');
+
     const screen =
-      !critical &&
-      ((['reflect', 'aurora-veil'].includes(field) && move.categoria === 'physical') ||
-        (['light-screen', 'aurora-veil'].includes(field) && move.categoria === 'special'))
+      defenderHasScreen &&
+      ((field === 'reflect' && move.categoria === 'physical') ||
+        (field === 'light-screen' && move.categoria === 'special'))
         ? 0.5
         : 1;
 
@@ -638,6 +900,7 @@ function App() {
       criticalMod,
       abilityMod,
       defenderAbilityMod,
+      screen,
     };
   }, [
     attacker,
@@ -649,6 +912,7 @@ function App() {
     attackerAbility,
     defenderAbility,
     field,
+    fieldSide,
     critical,
     burned,
     lowHp,
@@ -666,21 +930,23 @@ function App() {
       : 'No es KO'
     : 'Sin datos';
 
+  const updatePokemonInTeams = (updater: (p: Pokemon) => Pokemon) => {
+    setEquipoOU(list => list.map(updater));
+    setEquipoUU(list => list.map(updater));
+    setEquipoNU(list => list.map(updater));
+  };
+
   // --- Handlers for direct IV/EV modifications ---
   const updateIV = (id: string | undefined, key: StatKey, value: number) => {
     if (!id) return;
     const clamped = safeInteger(value, 31, 0, 31);
-    setPokemon(roster =>
-      roster.map(p => (p.id === id ? { ...p, ivs: { ...p.ivs, [key]: clamped } } : p)),
-    );
+    updatePokemonInTeams(p => (p.id === id ? { ...p, ivs: { ...p.ivs, [key]: clamped } } : p));
   };
 
   const updateEV = (id: string | undefined, key: StatKey, value: number) => {
     if (!id) return;
     const clamped = safeInteger(value, 0, 0, 252);
-    setPokemon(roster =>
-      roster.map(p => (p.id === id ? { ...p, evs: { ...p.evs, [key]: clamped } } : p)),
-    );
+    updatePokemonInTeams(p => (p.id === id ? { ...p, evs: { ...p.evs, [key]: clamped } } : p));
   };
 
   const applyIVPreset = (id: string | undefined, preset: 'max31' | 'minAtk' | 'minSpe') => {
@@ -693,7 +959,7 @@ function App() {
       spd: 31,
       spe: preset === 'minSpe' ? 0 : 31,
     };
-    setPokemon(roster => roster.map(p => (p.id === id ? { ...p, ivs: newIvs } : p)));
+    updatePokemonInTeams(p => (p.id === id ? { ...p, ivs: newIvs } : p));
     setToast('IVs actualizados.');
   };
 
@@ -707,18 +973,18 @@ function App() {
       spd: evs.spd ?? 0,
       spe: evs.spe ?? 0,
     };
-    setPokemon(roster => roster.map(p => (p.id === id ? { ...p, evs: newEvs } : p)));
+    updatePokemonInTeams(p => (p.id === id ? { ...p, evs: newEvs } : p));
     setToast('EVs actualizados.');
   };
 
   const updateHeldItem = (id: string | undefined, heldItem: string) => {
     if (!id) return;
-    setPokemon(roster => roster.map(p => (p.id === id ? { ...p, item: heldItem } : p)));
+    updatePokemonInTeams(p => (p.id === id ? { ...p, item: heldItem } : p));
   };
 
   const updateNature = (id: string | undefined, nat: string) => {
     if (!id) return;
-    setPokemon(roster => roster.map(p => (p.id === id ? { ...p, nature: nat } : p)));
+    updatePokemonInTeams(p => (p.id === id ? { ...p, nature: nat } : p));
   };
 
   const updateLevel = (which: 'attacker' | 'defender', by: number) =>
@@ -726,10 +992,8 @@ function App() {
 
   const updateBoost = (id: string | undefined, key: StageKey, change: number) => {
     if (!id) return;
-    setPokemon(roster =>
-      roster.map(p =>
-        p.id === id ? { ...p, boosts: { ...p.boosts, [key]: Math.max(-6, Math.min(6, p.boosts[key] + change)) } } : p,
-      ),
+    updatePokemonInTeams(p =>
+      p.id === id ? { ...p, boosts: { ...p.boosts, [key]: Math.max(-6, Math.min(6, p.boosts[key] + change)) } } : p,
     );
   };
 
@@ -737,7 +1001,7 @@ function App() {
 
   const clearActiveBoosts = () => {
     const active = new Set([attackerId, defenderId]);
-    setPokemon(roster => roster.map(p => (active.has(p.id) ? { ...p, boosts: { ...DEFAULT_BOOSTS } } : p)));
+    updatePokemonInTeams(p => (active.has(p.id) ? { ...p, boosts: { ...DEFAULT_BOOSTS } } : p));
   };
 
   async function handleBackgroundUpload(event: ChangeEvent<HTMLInputElement>) {
@@ -772,25 +1036,56 @@ function App() {
     const evs = Object.fromEntries(STAT_KEYS.map(key => [key, Number(data.get(`ev-${key}`))])) as StatValues;
     const baseStats = Object.fromEntries(STAT_KEYS.map(key => [key, Number(data.get(key))])) as StatValues;
 
+    const editingPk = editing as Pokemon | null;
+    const rawTier = String(data.get('tier') || activeTier || 'ou').toLowerCase();
+    const targetTier: 'ou' | 'uu' | 'nu' = rawTier === 'uu' ? 'uu' : rawTier === 'nu' ? 'nu' : 'ou';
+
     const next = normalizePokemon({
-      id: editing?.id ?? `pk-${Date.now()}`,
+      id: editingPk?.id ?? `pk-${Date.now()}`,
       nombre: name.slice(0, 24),
+      tier: targetTier,
       tipo1: String(data.get('tipo1')),
       tipo2: String(data.get('tipo2') ?? ''),
       ...baseStats,
       ivs,
       evs,
-      nature: String(data.get('nature') ?? 'adamant'),
-      item: String(data.get('item') ?? 'none'),
-      ability: String(data.get('ability') ?? 'none'),
+      nature: String(data.get('nature') ?? editingPk?.nature ?? 'adamant'),
+      item: String(data.get('item') ?? editingPk?.item ?? 'none'),
+      ability: String(data.get('ability') ?? editingPk?.ability ?? 'none'),
+      abilities: editingPk?.abilities ?? [],
+      learnset: editingPk?.learnset ?? [],
       finalEvolution: data.get('finalEvolution') === 'on',
-      boosts: (editing as Pokemon | null)?.boosts ?? DEFAULT_BOOSTS,
+      boosts: editingPk?.boosts ?? DEFAULT_BOOSTS,
     });
 
-    setPokemon(existing => (editing ? existing.map(p => (p.id === editing.id ? next : p)) : [...existing, next]));
-    if (!editing) setAttackerId(next.id);
-    setModal(null);
-    setToast(editing ? 'Pokémon actualizado.' : 'Pokémon añadido al equipo.');
+    if (editingPk) {
+      const oldTier: 'ou' | 'uu' | 'nu' =
+        editingPk.tier === 'uu' ? 'uu' : editingPk.tier === 'nu' ? 'nu' : 'ou';
+
+      if (oldTier === targetTier) {
+        if (targetTier === 'ou') setEquipoOU(list => list.map(p => (p.id === editingPk.id ? next : p)));
+        else if (targetTier === 'uu') setEquipoUU(list => list.map(p => (p.id === editingPk.id ? next : p)));
+        else setEquipoNU(list => list.map(p => (p.id === editingPk.id ? next : p)));
+      } else {
+        if (oldTier === 'ou') setEquipoOU(list => list.filter(p => p.id !== editingPk.id));
+        else if (oldTier === 'uu') setEquipoUU(list => list.filter(p => p.id !== editingPk.id));
+        else setEquipoNU(list => list.filter(p => p.id !== editingPk.id));
+
+        if (targetTier === 'ou') setEquipoOU(list => [...list, next]);
+        else if (targetTier === 'uu') setEquipoUU(list => [...list, next]);
+        else setEquipoNU(list => [...list, next]);
+      }
+      setToast(`Pokémon actualizado en Tier ${targetTier.toUpperCase()}.`);
+    } else {
+      if (targetTier === 'ou') setEquipoOU(list => [...list, next]);
+      else if (targetTier === 'uu') setEquipoUU(list => [...list, next]);
+      else setEquipoNU(list => [...list, next]);
+      setAttackerId(next.id);
+      setToast(`Pokémon añadido al equipo Tier ${targetTier.toUpperCase()}.`);
+    }
+
+    setEditing(null);
+    setTierViewMode('list');
   }
 
   function saveMove(event: FormEvent<HTMLFormElement>) {
@@ -820,9 +1115,11 @@ function App() {
 
   function deletePokemon(id: string) {
     const p = pokemon.find(item => item.id === id);
-    if (p && window.confirm(`¿Eliminar a ${p.nombre} del equipo?`)) {
-      setPokemon(list => list.filter(item => item.id !== id));
-      setToast('Pokémon eliminado.');
+    if (p && window.confirm(`¿Eliminar a ${p.nombre} del equipo Tier ${(p.tier || 'ou').toUpperCase()}?`)) {
+      setEquipoOU(list => list.filter(item => item.id !== id));
+      setEquipoUU(list => list.filter(item => item.id !== id));
+      setEquipoNU(list => list.filter(item => item.id !== id));
+      setToast(`Pokémon ${p.nombre} eliminado.`);
     }
   }
 
@@ -969,19 +1266,47 @@ function App() {
                     {attacker.tipo2 && <TypeBadge type={attacker.tipo2} size="sm" />}
                   </div>
 
-                  {/* Attacker Select */}
+                  {/* Attacker Select categorized by Tiers */}
                   <select
                     aria-label="Pokémon atacante"
                     data-testid="select-attacker"
                     className="combatant-name-select"
                     value={attackerId}
-                    onChange={e => setAttackerId(e.target.value)}
+                    onChange={e => handleAttackerChange(e.target.value)}
                   >
-                    {pokemon.map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.nombre}
-                      </option>
-                    ))}
+                    <optgroup label="Tier OU (Over Used)">
+                      {ouPokemon.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.nombre}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Tier UU (Under Used)">
+                      {uuPokemon.length > 0 ? (
+                        uuPokemon.map(p => (
+                          <option key={p.id} value={p.id}>
+                            {p.nombre}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="" disabled>
+                          (Sin Pokémon en UU — Pulsa Menú &gt; UU para añadir)
+                        </option>
+                      )}
+                    </optgroup>
+                    <optgroup label="Tier NU (Never Used)">
+                      {nuPokemon.length > 0 ? (
+                        nuPokemon.map(p => (
+                          <option key={p.id} value={p.id}>
+                            {p.nombre}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="" disabled>
+                          (Sin Pokémon en NU — Pulsa Menú &gt; NU para añadir)
+                        </option>
+                      )}
+                    </optgroup>
                   </select>
 
                   {/* Micro selects for Nature, Ability, Item */}
@@ -1010,7 +1335,7 @@ function App() {
                         value={attackerAbility}
                         onChange={e => setAttackerAbility(e.target.value)}
                       >
-                        {ATTACKER_ABILITIES.map(([id, label]) => (
+                        {attackerAllowedAbilities.map(([id, label]) => (
                           <option key={id} value={id}>
                             {label}
                           </option>
@@ -1082,19 +1407,47 @@ function App() {
                     {defender.tipo2 && <TypeBadge type={defender.tipo2} size="sm" />}
                   </div>
 
-                  {/* Defender Select */}
+                  {/* Defender Select categorized by Tiers */}
                   <select
                     aria-label="Pokémon defensor"
                     data-testid="select-defender"
                     className="combatant-name-select"
                     value={defenderId}
-                    onChange={e => setDefenderId(e.target.value)}
+                    onChange={e => handleDefenderChange(e.target.value)}
                   >
-                    {pokemon.map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.nombre}
-                      </option>
-                    ))}
+                    <optgroup label="Tier OU (Over Used)">
+                      {ouPokemon.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.nombre}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Tier UU (Under Used)">
+                      {uuPokemon.length > 0 ? (
+                        uuPokemon.map(p => (
+                          <option key={p.id} value={p.id}>
+                            {p.nombre}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="" disabled>
+                          (Sin Pokémon en UU — Pulsa Menú &gt; UU para añadir)
+                        </option>
+                      )}
+                    </optgroup>
+                    <optgroup label="Tier NU (Never Used)">
+                      {nuPokemon.length > 0 ? (
+                        nuPokemon.map(p => (
+                          <option key={p.id} value={p.id}>
+                            {p.nombre}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="" disabled>
+                          (Sin Pokémon en NU — Pulsa Menú &gt; NU para añadir)
+                        </option>
+                      )}
+                    </optgroup>
                   </select>
 
                   {/* Micro selects for Nature, Ability, Item */}
@@ -1123,7 +1476,7 @@ function App() {
                         value={defenderAbility}
                         onChange={e => setDefenderAbility(e.target.value)}
                       >
-                        {DEFENDER_ABILITIES.map(([id, label]) => (
+                        {defenderAllowedAbilities.map(([id, label]) => (
                           <option key={id} value={id}>
                             {label}
                           </option>
@@ -1167,20 +1520,20 @@ function App() {
               )}
             </div>
 
-            {/* Move Selection Row with Type Badge */}
+            {/* Move Selection Row with Type Badge (Filtered strictly to Attacker learnset) */}
             <div className="move-row">
               <div className="move-icon">
                 <Swords size={17} />
               </div>
               <div className="field">
-                <label htmlFor="move-choice">Movimiento</label>
+                <label htmlFor="move-choice">Movimiento ({attacker?.nombre})</label>
                 <select
                   id="move-choice"
                   data-testid="select-move"
                   value={moveId}
                   onChange={e => setMoveId(e.target.value)}
                 >
-                  {moves.map(m => (
+                  {attackerAllowedMoves.map(m => (
                     <option key={m.id} value={m.id}>
                       {m.nombre} · {typeName(m.tipo)} ({m.categoria === 'physical' ? 'Físico' : 'Especial'} · {m.poder} P)
                       {m.priority ? ` [Prio +${m.priority}]` : ''}
@@ -1229,6 +1582,23 @@ function App() {
                   onChange={e => setField(e.target.value as Field)}
                 >
                   {fieldOptions.map(([v, label]) => (
+                    <option key={v} value={v}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="field">
+                <label htmlFor="field-side">Lado del efecto</label>
+                <select
+                  id="field-side"
+                  data-testid="select-field-side"
+                  value={fieldSide}
+                  onChange={e => setFieldSide(e.target.value as FieldSide)}
+                  disabled={field === 'none'}
+                >
+                  {fieldSideOptions.map(([v, label]) => (
                     <option key={v} value={v}>
                       {label}
                     </option>
@@ -1411,9 +1781,13 @@ function App() {
                   </span>
                   <span className="modifier">
                     {field === 'tailwind'
-                      ? 'Viento Afín (Vel ×2)'
+                      ? `Viento Afín (${fieldSide === 'both' ? 'Ambos campos' : fieldSide === 'attacker' ? 'Campo atacante' : 'Campo rival'} Vel ×2)`
                       : field === 'none'
                       ? 'Sin pantallas'
+                      : calc.screen < 1
+                      ? `${fieldOptions.find(([v]) => v === field)?.[1]} (${fieldSide === 'both' ? 'Ambos campos −50%' : 'Campo rival −50%'})`
+                      : fieldSide === 'attacker'
+                      ? `${fieldOptions.find(([v]) => v === field)?.[1]} (Activo en atacante · No protege rival)`
                       : `Pantalla: ${fieldOptions.find(([v]) => v === field)?.[1]}`}
                   </span>
                   {weather !== 'none' && (
@@ -1593,9 +1967,10 @@ function App() {
               </button>
             </div>
 
-            {/* Pokémon section */}
+            {/* Pokémon section organized by 3 tiers */}
             <div className="drawer-section">
               <button
+                type="button"
                 data-testid="button-toggle-pokemon-section"
                 onClick={() => setOpenSections(s => ({ ...s, pokemon: !s.pokemon }))}
               >
@@ -1603,28 +1978,139 @@ function App() {
                 {openSections.pokemon ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
               </button>
               {openSections.pokemon && (
-                <>
-                  <button
-                    className="drawer-link"
-                    data-testid="button-add-pokemon"
-                    onClick={() => {
-                      setDrawer(false);
-                      openForm('pokemon');
-                    }}
-                  >
-                    <PlusCircle size={15} /> Añadir Pokémon al equipo
-                  </button>
-                  <button
-                    className="drawer-link"
-                    data-testid="button-manage-pokemon"
-                    onClick={() => {
-                      setDrawer(false);
-                      openForm('pokemon');
-                    }}
-                  >
-                    <Activity size={15} /> Gestionar equipo ({pokemon.length})
-                  </button>
-                </>
+                <div className="drawer-submenu">
+                  {/* Tier OU (Over Used) */}
+                  <div className="tier-group" data-testid="submenu-tier-ou">
+                    <button
+                      type="button"
+                      className="tier-group-header"
+                      onClick={() => setOpenTiers(t => ({ ...t, ou: !t.ou }))}
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="tier-chip tier-chip-ou">OU</span>
+                        <span>Tier OU (Over Used)</span>
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="tier-count">{equipoOU.length}</span>
+                        {openTiers.ou ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      </span>
+                    </button>
+                    {openTiers.ou && (
+                      <div className="tier-options">
+                        <button
+                          type="button"
+                          className="drawer-link"
+                          data-testid="button-add-pokemon-ou"
+                          onClick={() => {
+                            setDrawer(false);
+                            openAddPokemonForTier('ou');
+                          }}
+                        >
+                          <PlusCircle size={14} /> Añadir Pokémon a Tier OU
+                        </button>
+                        <button
+                          type="button"
+                          className="drawer-link"
+                          data-testid="button-manage-pokemon-ou"
+                          onClick={() => {
+                            setDrawer(false);
+                            openManageTeamForTier('ou');
+                          }}
+                        >
+                          <Activity size={14} /> Gestionar equipo Tier OU ({equipoOU.length})
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Tier UU (Under Used) */}
+                  <div className="tier-group" data-testid="submenu-tier-uu">
+                    <button
+                      type="button"
+                      className="tier-group-header"
+                      onClick={() => setOpenTiers(t => ({ ...t, uu: !t.uu }))}
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="tier-chip tier-chip-uu">UU</span>
+                        <span>Tier UU (Under Used)</span>
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="tier-count">{equipoUU.length}</span>
+                        {openTiers.uu ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      </span>
+                    </button>
+                    {openTiers.uu && (
+                      <div className="tier-options">
+                        <button
+                          type="button"
+                          className="drawer-link"
+                          data-testid="button-add-pokemon-uu"
+                          onClick={() => {
+                            setDrawer(false);
+                            openAddPokemonForTier('uu');
+                          }}
+                        >
+                          <PlusCircle size={14} /> Añadir Pokémon a Tier UU
+                        </button>
+                        <button
+                          type="button"
+                          className="drawer-link"
+                          data-testid="button-manage-pokemon-uu"
+                          onClick={() => {
+                            setDrawer(false);
+                            openManageTeamForTier('uu');
+                          }}
+                        >
+                          <Activity size={14} /> Gestionar equipo Tier UU ({equipoUU.length})
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Tier NU (Never Used) */}
+                  <div className="tier-group" data-testid="submenu-tier-nu">
+                    <button
+                      type="button"
+                      className="tier-group-header"
+                      onClick={() => setOpenTiers(t => ({ ...t, nu: !t.nu }))}
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="tier-chip tier-chip-nu">NU</span>
+                        <span>Tier NU (Never Used)</span>
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="tier-count">{equipoNU.length}</span>
+                        {openTiers.nu ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      </span>
+                    </button>
+                    {openTiers.nu && (
+                      <div className="tier-options">
+                        <button
+                          type="button"
+                          className="drawer-link"
+                          data-testid="button-add-pokemon-nu"
+                          onClick={() => {
+                            setDrawer(false);
+                            openAddPokemonForTier('nu');
+                          }}
+                        >
+                          <PlusCircle size={14} /> Añadir Pokémon a Tier NU
+                        </button>
+                        <button
+                          type="button"
+                          className="drawer-link"
+                          data-testid="button-manage-pokemon-nu"
+                          onClick={() => {
+                            setDrawer(false);
+                            openManageTeamForTier('nu');
+                          }}
+                        >
+                          <Activity size={14} /> Gestionar equipo Tier NU ({equipoNU.length})
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
 
@@ -1758,7 +2244,11 @@ function App() {
                 <div className="brand-kicker">ALMACENAMIENTO LOCAL · SIN CONEXIÓN</div>
                 <h2 id="modal-title">
                   {modal === 'pokemon'
-                    ? 'Equipo Pokémon'
+                    ? editingPokemon
+                      ? `Editar · ${editingPokemon.nombre} (Tier ${activeTier.toUpperCase()})`
+                      : tierViewMode === 'form'
+                      ? `Añadir Pokémon a Tier ${activeTier.toUpperCase()}`
+                      : `Gestionar equipo Tier ${activeTier.toUpperCase()} (${(activeTier === 'ou' ? equipoOU : activeTier === 'uu' ? equipoUU : equipoNU).length})`
                     : modal === 'movimiento'
                     ? 'Biblioteca de movimientos'
                     : modal === 'ivev-attacker'
@@ -2077,21 +2567,104 @@ function App() {
               </div>
             )}
 
-            {/* Pokemon Form */}
+            {/* Pokemon Form & Team Management organized by Tier */}
             {modal === 'pokemon' && (
               <>
-                <form className="modal-form" key={editing?.id ?? 'new-pokemon'} onSubmit={savePokemon}>
-                  <div className="form-field">
-                    <label htmlFor="pokemon-name">Nombre</label>
-                    <input
-                      id="pokemon-name"
-                      name="nombre"
-                      data-testid="input-pokemon-name"
-                      defaultValue={editingPokemon?.nombre ?? ''}
-                      maxLength={24}
-                      required
-                      placeholder="Ej. Garchomp"
-                    />
+                {/* Tier Tabs Switcher */}
+                <div className="tier-modal-tabs" role="tablist">
+                  <button
+                    type="button"
+                    data-testid="modal-tab-tier-ou"
+                    className={`tier-modal-tab ${activeTier === 'ou' ? 'active' : ''}`}
+                    onClick={() => {
+                      setActiveTier('ou');
+                      if (editing && (editing as Pokemon).tier !== 'ou') setEditing(null);
+                    }}
+                  >
+                    <span className="tier-chip tier-chip-ou">OU</span>
+                    <span>Tier OU ({equipoOU.length})</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="modal-tab-tier-uu"
+                    className={`tier-modal-tab ${activeTier === 'uu' ? 'active' : ''}`}
+                    onClick={() => {
+                      setActiveTier('uu');
+                      if (editing && (editing as Pokemon).tier !== 'uu') setEditing(null);
+                    }}
+                  >
+                    <span className="tier-chip tier-chip-uu">UU</span>
+                    <span>Tier UU ({equipoUU.length})</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="modal-tab-tier-nu"
+                    className={`tier-modal-tab ${activeTier === 'nu' ? 'active' : ''}`}
+                    onClick={() => {
+                      setActiveTier('nu');
+                      if (editing && (editing as Pokemon).tier !== 'nu') setEditing(null);
+                    }}
+                  >
+                    <span className="tier-chip tier-chip-nu">NU</span>
+                    <span>Tier NU ({equipoNU.length})</span>
+                  </button>
+                </div>
+
+                {/* Sub-actions for active tier */}
+                <div className="flex items-center justify-between gap-2 mb-3">
+                  <button
+                    type="button"
+                    data-testid="button-mode-add"
+                    className={`btn ${tierViewMode === 'form' || editing ? 'btn-primary' : 'btn-muted'} !py-2 !px-3 text-xs flex items-center gap-1.5`}
+                    onClick={() => {
+                      setEditing(null);
+                      setTierViewMode('form');
+                    }}
+                  >
+                    <PlusCircle size={14} /> Añadir a Tier {activeTier.toUpperCase()}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="button-mode-manage"
+                    className={`btn ${tierViewMode === 'list' && !editing ? 'btn-primary' : 'btn-muted'} !py-2 !px-3 text-xs flex items-center gap-1.5`}
+                    onClick={() => {
+                      setEditing(null);
+                      setTierViewMode('list');
+                    }}
+                  >
+                    <Activity size={14} /> Gestionar equipo Tier {activeTier.toUpperCase()} ({(activeTier === 'ou' ? equipoOU : activeTier === 'uu' ? equipoUU : equipoNU).length})
+                  </button>
+                </div>
+
+                {(tierViewMode === 'form' || editing) && (
+                <form className="modal-form" key={editing?.id ?? `new-pokemon-${activeTier}`} onSubmit={savePokemon}>
+                  <div className="form-grid">
+                    <div className="form-field">
+                      <label htmlFor="pokemon-name">Nombre</label>
+                      <input
+                        id="pokemon-name"
+                        name="nombre"
+                        data-testid="input-pokemon-name"
+                        defaultValue={editingPokemon?.nombre ?? ''}
+                        maxLength={24}
+                        required
+                        placeholder="Ej. Garchomp"
+                      />
+                    </div>
+                    <div className="form-field">
+                      <label htmlFor="pokemon-tier">Categoría / Tier</label>
+                      <select
+                        id="pokemon-tier"
+                        name="tier"
+                        data-testid="select-pokemon-tier"
+                        defaultValue={editingPokemon?.tier ?? activeTier}
+                        onChange={e => setActiveTier(e.target.value as 'ou' | 'uu' | 'nu')}
+                      >
+                        <option value="ou">Tier OU (Over Used)</option>
+                        <option value="uu">Tier UU (Under Used)</option>
+                        <option value="nu">Tier NU (Never Used)</option>
+                      </select>
+                    </div>
                   </div>
                   <div className="form-grid">
                     <FormType name="tipo1" label="Tipo 1" initial={editingPokemon?.tipo1 ?? 'normal'} />
@@ -2214,56 +2787,90 @@ function App() {
                     <small>El Mineral Evolutivo solo se aplica si no lo está.</small>
                   </label>
 
-                  <div className="form-actions">
-                    <button
-                      type="button"
-                      className="btn btn-muted"
-                      data-testid="button-new-pokemon"
-                      onClick={() => setEditing(null)}
-                    >
-                      Nuevo registro
-                    </button>
-                    <button className="btn btn-primary" data-testid="button-save-pokemon">
-                      {editing ? 'Guardar cambios' : 'Añadir Pokémon'}
-                    </button>
-                  </div>
-                </form>
+                    <div className="form-actions">
+                      <button
+                        type="button"
+                        className="btn btn-muted"
+                        data-testid="button-new-pokemon"
+                        onClick={() => {
+                          setEditing(null);
+                          setTierViewMode('list');
+                        }}
+                      >
+                        {editing ? 'Cancelar edición' : 'Ver lista'}
+                      </button>
+                      <button className="btn btn-primary" data-testid="button-save-pokemon">
+                        {editing ? 'Guardar cambios' : `Añadir a Tier ${activeTier.toUpperCase()}`}
+                      </button>
+                    </div>
+                  </form>
+                )}
 
-                <div className="roster-list">
-                  {pokemon.length ? (
-                    pokemon.map(p => (
-                      <div className="roster-row" key={p.id}>
-                        <div className="roster-info">
-                          <div className="flex items-center gap-2 mb-1">
-                            <strong className="text-sm">{p.nombre}</strong>
-                            <TypeBadge type={p.tipo1} size="sm" />
-                            {p.tipo2 && <TypeBadge type={p.tipo2} size="sm" />}
+                {/* Tier-specific Roster List */}
+                <div className="mt-4">
+                  <div className="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-700">
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                      <span className={`tier-chip tier-chip-${activeTier}`}>{activeTier.toUpperCase()}</span>
+                      Equipo Tier {activeTier.toUpperCase()} ({(activeTier === 'ou' ? equipoOU : activeTier === 'uu' ? equipoUU : equipoNU).length} Pokémon)
+                    </span>
+                    {tierViewMode !== 'form' && !editing && (
+                      <button
+                        type="button"
+                        className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold hover:underline flex items-center gap-1"
+                        onClick={() => {
+                          setEditing(null);
+                          setTierViewMode('form');
+                        }}
+                      >
+                        <Plus size={12} /> Nuevo Pokémon
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="roster-list">
+                    {(activeTier === 'ou' ? equipoOU : activeTier === 'uu' ? equipoUU : equipoNU).length ? (
+                      (activeTier === 'ou' ? equipoOU : activeTier === 'uu' ? equipoUU : equipoNU).map(p => (
+                        <div className="roster-row" key={p.id}>
+                          <div className="roster-info">
+                            <div className="flex items-center gap-2 mb-1">
+                              <strong className="text-sm">{p.nombre}</strong>
+                              <TypeBadge type={p.tipo1} size="sm" />
+                              {p.tipo2 && <TypeBadge type={p.tipo2} size="sm" />}
+                              <span className={`tier-chip tier-chip-${p.tier || 'ou'} ml-auto`}>
+                                {(p.tier || 'ou').toUpperCase()}
+                              </span>
+                            </div>
+                            <small>
+                              PS {p.hp} · Atq {p.atk} · Def {p.def} · SpA {p.spa} · SpD {p.spd} · Vel {p.spe}
+                            </small>
                           </div>
-                          <small>
-                            PS {p.hp} · Atq {p.atk} · Def {p.def} · SpA {p.spa} · SpD {p.spd} · Vel {p.spe}
-                          </small>
+                          <button
+                            className="tiny-action"
+                            aria-label={`Editar ${p.nombre}`}
+                            data-testid={`button-edit-pokemon-${p.id}`}
+                            onClick={() => {
+                              setEditing(p);
+                              setTierViewMode('form');
+                            }}
+                          >
+                            <Edit2 size={14} />
+                          </button>
+                          <button
+                            className="tiny-action delete"
+                            aria-label={`Eliminar ${p.nombre}`}
+                            data-testid={`button-delete-pokemon-${p.id}`}
+                            onClick={() => deletePokemon(p.id)}
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         </div>
-                        <button
-                          className="tiny-action"
-                          aria-label={`Editar ${p.nombre}`}
-                          data-testid={`button-edit-pokemon-${p.id}`}
-                          onClick={() => setEditing(p)}
-                        >
-                          <Edit2 size={14} />
-                        </button>
-                        <button
-                          className="tiny-action delete"
-                          aria-label={`Eliminar ${p.nombre}`}
-                          data-testid={`button-delete-pokemon-${p.id}`}
-                          onClick={() => deletePokemon(p.id)}
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                      ))
+                    ) : (
+                      <div className="empty-state">
+                        El equipo Tier {activeTier.toUpperCase()} está vacío. Pulsa en "Añadir a Tier {activeTier.toUpperCase()}" arriba para añadir tu primer Pokémon.
                       </div>
-                    ))
-                  ) : (
-                    <div className="empty-state">Tu equipo está vacío. Añade un Pokémon arriba.</div>
-                  )}
+                    )}
+                  </div>
                 </div>
               </>
             )}

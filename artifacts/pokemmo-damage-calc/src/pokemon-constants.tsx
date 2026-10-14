@@ -5,9 +5,13 @@ export type StageKey = Exclude<StatKey, 'hp'>;
 export type StatValues = Record<StatKey, number>;
 export type StageValues = Record<StageKey, number>;
 
+export type PokemonTier = 'ou' | 'uu' | 'nu' | 'custom';
+
 export type Pokemon = {
   id: string;
   nombre: string;
+  tier?: PokemonTier;
+  categoria?: string;
   tipo1: string;
   tipo2: string;
   hp: number;
@@ -21,6 +25,8 @@ export type Pokemon = {
   nature: string;
   item: string;
   ability?: string;
+  abilities?: string[];
+  learnset?: string[];
   finalEvolution: boolean;
   boosts: StageValues;
 };
@@ -92,7 +98,7 @@ export const TYPE_COLORS: Record<string, { bg: string; text: string; border: str
   poison:   { bg: '#9141CB', text: '#ffffff', border: '#6E2A9F' },
   ground:   { bg: '#915121', text: '#ffffff', border: '#6F3A12' },
   flying:   { bg: '#81B9EF', text: '#0d2d4c', border: '#5A94CB' },
-  psychic:   { bg: '#EF4179', text: '#ffffff', border: '#C22659' },
+  psychic:  { bg: '#EF4179', text: '#ffffff', border: '#C22659' },
   bug:      { bg: '#91A119', text: '#ffffff', border: '#6E7C0C' },
   rock:     { bg: '#AFA981', text: '#262417', border: '#898460' },
   ghost:    { bg: '#704170', text: '#ffffff', border: '#532C53' },
@@ -178,44 +184,107 @@ export const ITEMS: [string, string][] = [
   ...TYPES.slice(1).map(([id, name]): [string, string] => [`${id}-gem`, `${name} Zafiro (+30% ${name})`]),
 ];
 
-export const ATTACKER_ABILITIES: [string, string][] = [
-  ['none', 'Ninguna'],
-  ['adaptability', 'Adaptable (STAB ×2)'],
-  ['huge-power', 'Potencia (Ataque ×2)'],
-  ['pure-power', 'Energía Pura (Ataque ×2)'],
-  ['technician', 'Experto (Potencia ≤60 ×1,5)'],
-  ['guts', 'Agallas (Ataque ×1,5 si está quemado)'],
-  ['sheer-force', 'Potencia Bruta (Daño ×1,3)'],
-  ['sniper', 'Francotirador (Críticos ×2,25)'],
-  ['tinted-lens', 'Cromolente (Poco eficaz ×2)'],
-  ['contrary', 'Respondón (Invierte cambios de stats)'],
-  ['blaze', 'Mar Llamas (Fuego ×1,5 con PS bajos)'],
-  ['torrent', 'Torrente (Agua ×1,5 con PS bajos)'],
-  ['overgrow', 'Espesura (Planta ×1,5 con PS bajos)'],
-  ['swarm', 'Enjambre (Bicho ×1,5 con PS bajos)'],
-  ['swift-swim', 'Nado Rápido (Velocidad ×2 en Lluvia)'],
-  ['chlorophyll', 'Clorofila (Velocidad ×2 en Sol)'],
-  ['sand-rush', 'Ímpetu Arena (Velocidad ×2 en Tormenta)'],
-  ['slush-rush', 'Quitanieves (Velocidad ×2 en Granizo)'],
-];
+// Master Dictionary with descriptive Spanish names for all abilities
+export const ALL_ABILITY_DEFINITIONS: Record<string, { name: string; desc: string }> = {
+  // Slowbro
+  'oblivious': { name: 'Despiste', desc: 'Inmune a atracción y mofa' },
+  'own-tempo': { name: 'Ritmo Propio', desc: 'Inmune a confusión' },
+  'regenerator': { name: 'Regenerador', desc: 'Recupera 1/3 PS al cambiar' },
 
-export const DEFENDER_ABILITIES: [string, string][] = [
-  ['none', 'Ninguna'],
-  ['intimidate', 'Intimidación (-1 Ataque rival)'],
-  ['levitate', 'Levitación (Inmune a Tierra)'],
-  ['thick-fat', 'Sebo (-50% daño de Fuego y Hielo)'],
-  ['multiscale', 'Multiescamas (-50% daño con PS lleno)'],
-  ['fur-coat', 'Pelaje Recio (Defensa física ×2)'],
-  ['unaware', 'Ignorante (Ignora boosts de ataque rival)'],
-  ['solid-rock', 'Roca Sólida (-25% daño supereficaz)'],
-  ['filter', 'Filtro (-25% daño supereficaz)'],
-  ['water-absorb', 'Absorbe Agua (Inmune a Agua)'],
-  ['flash-fire', 'Absorbe Fuego (Inmune a Fuego)'],
-  ['volt-absorb', 'Absorbe Elec. (Inmune a Eléctrico)'],
-  ['sap-sipper', 'Herbívoro (Inmune a Planta)'],
-  ['wonder-guard', 'Superguarda (Solo daña si es supereficaz)'],
-  ['swift-swim', 'Nado Rápido (Velocidad ×2 en Lluvia)'],
-  ['chlorophyll', 'Clorofila (Velocidad ×2 en Sol)'],
-  ['sand-rush', 'Ímpetu Arena (Velocidad ×2 en Tormenta)'],
-  ['slush-rush', 'Quitanieves (Velocidad ×2 en Granizo)'],
-];
+  // Gengar
+  'levitate': { name: 'Levitación', desc: 'Inmune a Tierra' },
+  'cursed-body': { name: 'Cuerpo Maldito', desc: '30% anula ataque recibido' },
+
+  // Weezing
+  'neutralizing-gas': { name: 'Gas Reactivo', desc: 'Anula habilidades en el campo' },
+  'stench': { name: 'Hedor', desc: '10% de amedrentar al golpear' },
+
+  // Chansey
+  'natural-cure': { name: 'Cura Natural', desc: 'Cura estados al cambiar' },
+  'serene-grace': { name: 'Dicha', desc: 'Duplica probabilidad de efectos secundarios' },
+  'healer': { name: 'Alma Cura', desc: '30% cura estados de aliados' },
+
+  // Starmie
+  'illuminate': { name: 'Iluminación', desc: 'Evita bajadas de precisión' },
+  'analytic': { name: 'Cálculo Final (Analítico)', desc: 'Daño ×1,3 si ataca después' },
+
+  // Garchomp
+  'sand-veil': { name: 'Velo Arena', desc: '+20% evasión en Tormenta Arena' },
+  'rough-skin': { name: 'Piel Tosca', desc: 'Daña 1/8 PS al contacto' },
+
+  // Scizor
+  'technician': { name: 'Experto', desc: 'Potencia ≤60 ×1,5' },
+  'swarm': { name: 'Enjambre', desc: 'Bicho ×1,5 con PS bajos' },
+  'light-metal': { name: 'Metal Liviano', desc: 'Reduce peso a la mitad' },
+
+  // Tyranitar
+  'sand-stream': { name: 'Chorro Arena', desc: 'Invoca Tormenta de Arena' },
+  'unnerve': { name: 'Nerviosismo', desc: 'Impide comer bayas al rival' },
+
+  // Standard Battle Abilities
+  'none': { name: 'Ninguna', desc: 'Sin habilidad' },
+  'adaptability': { name: 'Adaptable', desc: 'STAB ×2' },
+  'huge-power': { name: 'Potencia', desc: 'Ataque físico ×2' },
+  'pure-power': { name: 'Energía Pura', desc: 'Ataque físico ×2' },
+  'guts': { name: 'Agallas', desc: 'Ataque ×1,5 si está quemado' },
+  'sheer-force': { name: 'Potencia Bruta', desc: 'Daño ×1,3' },
+  'sniper': { name: 'Francotirador', desc: 'Críticos ×2,25' },
+  'tinted-lens': { name: 'Cromolente', desc: 'Poco eficaz ×2' },
+  'contrary': { name: 'Respondón', desc: 'Invierte cambios de stats' },
+  'blaze': { name: 'Mar Llamas', desc: 'Fuego ×1,5 con PS bajos' },
+  'torrent': { name: 'Torrente', desc: 'Agua ×1,5 con PS bajos' },
+  'overgrow': { name: 'Espesura', desc: 'Planta ×1,5 con PS bajos' },
+  'swift-swim': { name: 'Nado Rápido', desc: 'Velocidad ×2 en Lluvia' },
+  'chlorophyll': { name: 'Clorofila', desc: 'Velocidad ×2 en Sol' },
+  'sand-rush': { name: 'Ímpetu Arena', desc: 'Velocidad ×2 en Tormenta' },
+  'slush-rush': { name: 'Quitanieves', desc: 'Velocidad ×2 en Granizo' },
+  'intimidate': { name: 'Intimidación', desc: '-1 Ataque rival' },
+  'thick-fat': { name: 'Sebo', desc: '-50% daño de Fuego y Hielo' },
+  'multiscale': { name: 'Multiescamas', desc: '-50% daño con PS lleno' },
+  'fur-coat': { name: 'Pelaje Recio', desc: 'Defensa física ×2' },
+  'unaware': { name: 'Ignorante', desc: 'Ignora boosts de ataque rival' },
+  'solid-rock': { name: 'Roca Sólida', desc: '-25% daño supereficaz' },
+  'filter': { name: 'Filtro', desc: '-25% daño supereficaz' },
+  'water-absorb': { name: 'Absorbe Agua', desc: 'Inmune a Agua' },
+  'flash-fire': { name: 'Absorbe Fuego', desc: 'Inmune a Fuego' },
+  'volt-absorb': { name: 'Absorbe Elec.', desc: 'Inmune a Eléctrico' },
+  'sap-sipper': { name: 'Herbívoro', desc: 'Inmune a Planta' },
+  'wonder-guard': { name: 'Superguarda', desc: 'Solo daña si es supereficaz' },
+};
+
+export const ATTACKER_ABILITIES: [string, string][] = Object.entries(ALL_ABILITY_DEFINITIONS).map(
+  ([id, def]) => [id, `${def.name} (${def.desc})`]
+);
+
+export const DEFENDER_ABILITIES: [string, string][] = Object.entries(ALL_ABILITY_DEFINITIONS).map(
+  ([id, def]) => [id, `${def.name} (${def.desc})`]
+);
+
+/**
+ * Returns strictly the allowed abilities for a specific Pokémon.
+ * If the Pokémon defines a specific abilities list, returns only those.
+ */
+export function getPokemonAbilities(pokemon?: Pokemon | null): [string, string][] {
+  if (!pokemon) return [['none', 'Ninguna']];
+  const list = pokemon.abilities && pokemon.abilities.length > 0 ? pokemon.abilities : [];
+  if (list.length === 0) {
+    return [['none', 'Ninguna']];
+  }
+  return list.map(abilityId => {
+    const def = ALL_ABILITY_DEFINITIONS[abilityId];
+    return [abilityId, def ? `${def.name} (${def.desc})` : abilityId];
+  });
+}
+
+/**
+ * Returns strictly the learnable moves for a specific Pokémon.
+ * If the Pokémon defines a learnset, filters the master moves list to only those moves.
+ */
+export function getPokemonMoves(pokemon?: Pokemon | null, allMoves: Move[] = []): Move[] {
+  if (!pokemon || !pokemon.learnset || pokemon.learnset.length === 0) {
+    return allMoves;
+  }
+  const set = new Set(pokemon.learnset);
+  const filtered = allMoves.filter(m => set.has(m.id));
+  return filtered.length > 0 ? filtered : allMoves;
+}
