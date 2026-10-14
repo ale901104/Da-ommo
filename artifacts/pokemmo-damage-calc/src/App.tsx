@@ -1,6 +1,7 @@
 import { type ChangeEvent, type FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   Activity,
+  BookOpen,
   ChevronDown,
   ChevronRight,
   CircleHelp,
@@ -13,6 +14,8 @@ import {
   Minus,
   Moon,
   Palette,
+  Pin,
+  PinOff,
   Plus,
   PlusCircle,
   RotateCcw,
@@ -50,8 +53,11 @@ import {
 } from './pokemon-constants';
 import { usePWAInstall } from './hooks/use-pwa-install';
 import { WeatherBackground } from './components/weather-background';
+import { allGen1To5Pokemon, convertDexToPokemon } from './dex';
+import { DexGeneralModal } from './components/DexGeneralModal';
+import { PokemonSearchableSelect } from './components/PokemonSearchableSelect';
 
-type ModalKind = 'pokemon' | 'movimiento' | 'apk-guide' | 'ivev-attacker' | 'ivev-defender' | null;
+type ModalKind = 'pokemon' | 'movimiento' | 'apk-guide' | 'ivev-attacker' | 'ivev-defender' | 'dex-general' | null;
 type Weather = 'none' | 'sun' | 'rain' | 'sand' | 'hail';
 type Field = 'none' | 'reflect' | 'light-screen' | 'tailwind';
 type FieldSide = 'both' | 'attacker' | 'defender';
@@ -82,18 +88,17 @@ const EFFECT: Record<string, Record<string, number>> = {
   electric: { water: 2, electric: 0.5, grass: 0.5, ground: 0, flying: 2, dragon: 0.5 },
   grass: { fire: 0.5, water: 2, grass: 0.5, poison: 0.5, ground: 2, flying: 0.5, bug: 0.5, rock: 2, dragon: 0.5, steel: 0.5 },
   ice: { fire: 0.5, water: 0.5, grass: 2, ice: 0.5, ground: 2, flying: 2, dragon: 2, steel: 0.5 },
-  fighting: { normal: 2, ice: 2, poison: 0.5, flying: 0.5, psychic: 0.5, bug: 0.5, rock: 2, ghost: 0, dark: 2, steel: 2, fairy: 0.5 },
-  poison: { grass: 2, poison: 0.5, ground: 0.5, rock: 0.5, ghost: 0.5, steel: 0, fairy: 2 },
+  fighting: { normal: 2, ice: 2, poison: 0.5, flying: 0.5, psychic: 0.5, bug: 0.5, rock: 2, ghost: 0, dark: 2, steel: 2 },
+  poison: { grass: 2, poison: 0.5, ground: 0.5, rock: 0.5, ghost: 0.5, steel: 0 },
   ground: { fire: 2, electric: 2, grass: 0.5, poison: 2, flying: 0, bug: 0.5, rock: 2, steel: 2 },
   flying: { electric: 0.5, grass: 2, fighting: 2, bug: 2, rock: 0.5, steel: 0.5 },
   psychic: { fighting: 2, poison: 2, psychic: 0.5, dark: 0, steel: 0.5 },
-  bug: { fire: 0.5, grass: 2, fighting: 0.5, poison: 0.5, flying: 0.5, psychic: 2, ghost: 0.5, dark: 2, steel: 0.5, fairy: 0.5 },
+  bug: { fire: 0.5, grass: 2, fighting: 0.5, poison: 0.5, flying: 0.5, psychic: 2, ghost: 0.5, dark: 2, steel: 0.5 },
   rock: { fire: 2, ice: 2, fighting: 0.5, ground: 0.5, flying: 2, bug: 2, steel: 0.5 },
   ghost: { normal: 0, psychic: 2, ghost: 2, dark: 0.5 },
-  dragon: { dragon: 2, steel: 0.5, fairy: 0 },
+  dragon: { dragon: 2, steel: 0.5 },
   dark: { fighting: 0.5, psychic: 2, ghost: 2, dark: 0.5 },
-  steel: { fire: 0.5, water: 0.5, electric: 0.5, ice: 2, rock: 2, steel: 0.5, fairy: 2 },
-  fairy: { fire: 0.5, fighting: 2, poison: 0.5, dragon: 2, dark: 2, steel: 0.5 },
+  steel: { fire: 0.5, water: 0.5, electric: 0.5, ice: 2, rock: 2, steel: 0.5 },
 };
 
 const weatherOptions: [Weather, string][] = [
@@ -320,6 +325,13 @@ function loadSaved() {
     // ignore
   }
 
+  let lockCustomBackground = false;
+  try {
+    lockCustomBackground = localStorage.getItem('lockCustomBackground') === 'true';
+  } catch {
+    // ignore
+  }
+
   return {
     equipoOU,
     equipoUU,
@@ -328,6 +340,7 @@ function loadSaved() {
     habilidades,
     background,
     customBackground,
+    lockCustomBackground,
     theme,
   };
 }
@@ -409,10 +422,26 @@ function App() {
   const [background, setBackground] = useState<BackgroundChoice>(initial.background);
   const [customBackground, setCustomBackground] = useState(initial.customBackground);
   const [theme, setTheme] = useState<ThemeChoice>(initial.theme);
+  const [lockCustomBackground, setLockCustomBackground] = useState<boolean>(initial.lockCustomBackground);
 
-  // Combined pokemon list for calculation lookups
+  useEffect(() => {
+    try {
+      localStorage.setItem('lockCustomBackground', String(lockCustomBackground));
+    } catch {
+      // ignore
+    }
+  }, [lockCustomBackground]);
+
+  // Combined pokemon list for calculation lookups: Gen 1-5 Dex plus custom team overrides
   const pokemon = useMemo(() => {
-    return [...equipoOU, ...equipoUU, ...equipoNU];
+    const map = new Map<string, Pokemon>();
+    for (const p of allGen1To5Pokemon) {
+      map.set(p.id, p);
+    }
+    for (const p of equipoOU) map.set(p.id, p);
+    for (const p of equipoUU) map.set(p.id, p);
+    for (const p of equipoNU) map.set(p.id, p);
+    return Array.from(map.values());
   }, [equipoOU, equipoUU, equipoNU]);
 
   const [attackerId, setAttackerId] = useState(initial.equipoOU[0]?.id ?? '');
@@ -435,12 +464,56 @@ function App() {
 
   const [drawer, setDrawer] = useState(false);
   const [openSections, setOpenSections] = useState({ pokemon: true, moves: false, abilities: false, backgrounds: false });
-  const [openTiers, setOpenTiers] = useState<{ ou: boolean; uu: boolean; nu: boolean }>({ ou: true, uu: false, nu: false });
+  const [openTiers, setOpenTiers] = useState<{ dex: boolean; ou: boolean; uu: boolean; nu: boolean }>({
+    dex: true,
+    ou: true,
+    uu: false,
+    nu: false,
+  });
   const [activeTier, setActiveTier] = useState<'ou' | 'uu' | 'nu'>('ou');
   const [tierViewMode, setTierViewMode] = useState<'form' | 'list'>('list');
   const [modal, setModal] = useState<ModalKind>(null);
   const [editing, setEditing] = useState<Pokemon | Move | null>(null);
   const [toast, setToast] = useState('');
+
+  // Dex General selection state
+  const [dexTargetRole, setDexTargetRole] = useState<'attacker' | 'defender' | null>(null);
+  const [dexInitialGen, setDexInitialGen] = useState<number>(0);
+
+  function openDexGeneral(targetRole: 'attacker' | 'defender' | null = null, gen = 0) {
+    setDexTargetRole(targetRole);
+    setDexInitialGen(gen);
+    setModal('dex-general');
+  }
+
+  function handleAddFromDexToTeam(pk: Pokemon, tier: 'ou' | 'uu' | 'nu') {
+    const newPk: Pokemon = {
+      ...pk,
+      id: `${pk.id}-${Date.now().toString(36)}`,
+      tier,
+      categoria: tier,
+    };
+    if (tier === 'ou') {
+      setEquipoOU(list => [...list, newPk]);
+      setToast(`${pk.nombre} añadido al equipo OU.`);
+    } else if (tier === 'uu') {
+      setEquipoUU(list => [...list, newPk]);
+      setToast(`${pk.nombre} añadido al equipo UU.`);
+    } else if (tier === 'nu') {
+      setEquipoNU(list => [...list, newPk]);
+      setToast(`${pk.nombre} añadido al equipo NU.`);
+    }
+  }
+
+  function handleSelectAttackerFromDex(pk: Pokemon) {
+    handleAttackerChange(pk.id);
+    setToast(`${pk.nombre} cargado como Atacante.`);
+  }
+
+  function handleSelectDefenderFromDex(pk: Pokemon) {
+    handleDefenderChange(pk.id);
+    setToast(`${pk.nombre} cargado como Defensor.`);
+  }
 
   // PWA Install hook
   const { isInstallable, isInstalled, install } = usePWAInstall();
@@ -1115,12 +1188,22 @@ function App() {
 
   function deletePokemon(id: string) {
     const p = pokemon.find(item => item.id === id);
-    if (p && window.confirm(`¿Eliminar a ${p.nombre} del equipo Tier ${(p.tier || 'ou').toUpperCase()}?`)) {
-      setEquipoOU(list => list.filter(item => item.id !== id));
-      setEquipoUU(list => list.filter(item => item.id !== id));
-      setEquipoNU(list => list.filter(item => item.id !== id));
-      setToast(`Pokémon ${p.nombre} eliminado.`);
+    if (!p) return;
+    setEquipoOU(list => list.filter(item => item.id !== id));
+    setEquipoUU(list => list.filter(item => item.id !== id));
+    setEquipoNU(list => list.filter(item => item.id !== id));
+    setToast(`Pokémon ${p.nombre} eliminado del equipo.`);
+  }
+
+  function clearActiveTierList(tier: 'ou' | 'uu' | 'nu') {
+    if (tier === 'ou') {
+      setEquipoOU([]);
+    } else if (tier === 'uu') {
+      setEquipoUU([]);
+    } else if (tier === 'nu') {
+      setEquipoNU([]);
     }
+    setToast(`Lista completa de Tier ${tier.toUpperCase()} vaciada.`);
   }
 
   function deleteMove(id: string) {
@@ -1142,7 +1225,11 @@ function App() {
   return (
     <main className="app-shell" data-theme={theme}>
       {/* Dynamic Animated Weather Background Layer */}
-      <WeatherBackground weather={weather} defaultImage={defaultWallpaper} />
+      <WeatherBackground
+        weather={weather}
+        defaultImage={defaultWallpaper}
+        lockCustomBackground={lockCustomBackground && background === 'custom' && !!customBackground}
+      />
 
       {/* Top Header */}
       <header className="topbar">
@@ -1266,48 +1353,19 @@ function App() {
                     {attacker.tipo2 && <TypeBadge type={attacker.tipo2} size="sm" />}
                   </div>
 
-                  {/* Attacker Select categorized by Tiers */}
-                  <select
-                    aria-label="Pokémon atacante"
-                    data-testid="select-attacker"
-                    className="combatant-name-select"
+                  {/* Searchable input for Attacker (type name to filter real-time) */}
+                  <PokemonSearchableSelect
+                    id="select-attacker-search"
+                    dataTestId="select-attacker"
+                    label="Pokémon atacante"
                     value={attackerId}
-                    onChange={e => handleAttackerChange(e.target.value)}
-                  >
-                    <optgroup label="Tier OU (Over Used)">
-                      {ouPokemon.map(p => (
-                        <option key={p.id} value={p.id}>
-                          {p.nombre}
-                        </option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="Tier UU (Under Used)">
-                      {uuPokemon.length > 0 ? (
-                        uuPokemon.map(p => (
-                          <option key={p.id} value={p.id}>
-                            {p.nombre}
-                          </option>
-                        ))
-                      ) : (
-                        <option value="" disabled>
-                          (Sin Pokémon en UU — Pulsa Menú &gt; UU para añadir)
-                        </option>
-                      )}
-                    </optgroup>
-                    <optgroup label="Tier NU (Never Used)">
-                      {nuPokemon.length > 0 ? (
-                        nuPokemon.map(p => (
-                          <option key={p.id} value={p.id}>
-                            {p.nombre}
-                          </option>
-                        ))
-                      ) : (
-                        <option value="" disabled>
-                          (Sin Pokémon en NU — Pulsa Menú &gt; NU para añadir)
-                        </option>
-                      )}
-                    </optgroup>
-                  </select>
+                    onChange={handleAttackerChange}
+                    pokemonList={pokemon}
+                    equipoOU={ouPokemon}
+                    equipoUU={uuPokemon}
+                    equipoNU={nuPokemon}
+                    placeholder="Escribe el nombre del atacante..."
+                  />
 
                   {/* Micro selects for Nature, Ability, Item */}
                   <div className="combatant-micro-selects">
@@ -1407,48 +1465,19 @@ function App() {
                     {defender.tipo2 && <TypeBadge type={defender.tipo2} size="sm" />}
                   </div>
 
-                  {/* Defender Select categorized by Tiers */}
-                  <select
-                    aria-label="Pokémon defensor"
-                    data-testid="select-defender"
-                    className="combatant-name-select"
+                  {/* Searchable input for Defender (type name to filter real-time) */}
+                  <PokemonSearchableSelect
+                    id="select-defender-search"
+                    dataTestId="select-defender"
+                    label="Pokémon defensor"
                     value={defenderId}
-                    onChange={e => handleDefenderChange(e.target.value)}
-                  >
-                    <optgroup label="Tier OU (Over Used)">
-                      {ouPokemon.map(p => (
-                        <option key={p.id} value={p.id}>
-                          {p.nombre}
-                        </option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="Tier UU (Under Used)">
-                      {uuPokemon.length > 0 ? (
-                        uuPokemon.map(p => (
-                          <option key={p.id} value={p.id}>
-                            {p.nombre}
-                          </option>
-                        ))
-                      ) : (
-                        <option value="" disabled>
-                          (Sin Pokémon en UU — Pulsa Menú &gt; UU para añadir)
-                        </option>
-                      )}
-                    </optgroup>
-                    <optgroup label="Tier NU (Never Used)">
-                      {nuPokemon.length > 0 ? (
-                        nuPokemon.map(p => (
-                          <option key={p.id} value={p.id}>
-                            {p.nombre}
-                          </option>
-                        ))
-                      ) : (
-                        <option value="" disabled>
-                          (Sin Pokémon en NU — Pulsa Menú &gt; NU para añadir)
-                        </option>
-                      )}
-                    </optgroup>
-                  </select>
+                    onChange={handleDefenderChange}
+                    pokemonList={pokemon}
+                    equipoOU={ouPokemon}
+                    equipoUU={uuPokemon}
+                    equipoNU={nuPokemon}
+                    placeholder="Escribe el nombre del defensor..."
+                  />
 
                   {/* Micro selects for Nature, Ability, Item */}
                   <div className="combatant-micro-selects">
@@ -1571,6 +1600,25 @@ function App() {
                     </option>
                   ))}
                 </select>
+                {customBackground && background === 'custom' && (
+                  <button
+                    type="button"
+                    className={`pin-weather-toggle-btn ${lockCustomBackground ? 'pinned' : ''}`}
+                    data-testid="button-quick-pin-weather"
+                    onClick={() => {
+                      setLockCustomBackground(v => !v);
+                      setToast(
+                        !lockCustomBackground
+                          ? '📌 Fondo fijado: Tu imagen no se verá afectada por el clima.'
+                          : 'Fondo desfijado: El clima volverá a alterar el fondo.',
+                      );
+                    }}
+                    title="Fijar o desfijar tu imagen para que no sea alterada por los climas"
+                  >
+                    {lockCustomBackground ? <PinOff size={11} /> : <Pin size={11} />}
+                    <span>{lockCustomBackground ? 'Mi imagen fijada (Inmune)' : 'Fijar mi imagen vs clima'}</span>
+                  </button>
+                )}
               </div>
 
               <div className="field">
@@ -1967,18 +2015,51 @@ function App() {
               </button>
             </div>
 
-            {/* Pokémon section organized by 3 tiers */}
+            {/* Pokémon Dex section organized by Dex General and 3 tiers */}
             <div className="drawer-section">
               <button
                 type="button"
                 data-testid="button-toggle-pokemon-section"
                 onClick={() => setOpenSections(s => ({ ...s, pokemon: !s.pokemon }))}
               >
-                <span>Pokémon</span>
+                <span>Pokémon Dex</span>
                 {openSections.pokemon ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
               </button>
               {openSections.pokemon && (
                 <div className="drawer-submenu">
+                  {/* Dex General (#001 a #649 - Gen 1 a 5) */}
+                  <div className="tier-group" data-testid="submenu-tier-dex">
+                    <button
+                      type="button"
+                      className="tier-group-header"
+                      onClick={() => setOpenTiers(t => ({ ...t, dex: !t.dex }))}
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="tier-chip tier-chip-dex">DEX</span>
+                        <span>Dex general (#001 a #649)</span>
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="tier-count">649</span>
+                        {openTiers.dex ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      </span>
+                    </button>
+                    {openTiers.dex && (
+                      <div className="tier-options">
+                        <button
+                          type="button"
+                          className="drawer-link font-bold text-emerald-800 dark:text-emerald-300"
+                          data-testid="button-open-dex-general"
+                          onClick={() => {
+                            setDrawer(false);
+                            openDexGeneral();
+                          }}
+                        >
+                          <BookOpen size={14} /> Explorar Dex general (#001 — #649)
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
                   {/* Tier OU (Over Used) */}
                   <div className="tier-group" data-testid="submenu-tier-ou">
                     <button
@@ -2203,18 +2284,43 @@ function App() {
                     />
                   </label>
                   {customBackground && (
-                    <button
-                      className="remove-background"
-                      type="button"
-                      data-testid="button-remove-background"
-                      onClick={() => {
-                        setCustomBackground('');
-                        if (background === 'custom') setBackground('mint');
-                        setToast('Imagen personalizada eliminada.');
-                      }}
-                    >
-                      Eliminar mi imagen
-                    </button>
+                    <div className="flex flex-col gap-2 mt-2">
+                      <button
+                        type="button"
+                        className={`btn ${lockCustomBackground ? 'btn-primary' : 'btn-muted'} !py-2 !px-3 text-xs flex items-center justify-between gap-2`}
+                        data-testid="button-toggle-pin-background"
+                        onClick={() => {
+                          setLockCustomBackground(prev => !prev);
+                          setToast(
+                            !lockCustomBackground
+                              ? '📌 Fondo fijado: Tu imagen no se verá afectada por el clima.'
+                              : 'Fondo desfijado: El clima volverá a alterar el fondo.',
+                          );
+                        }}
+                        title="Fijar tu imagen para que no sea alterada por los climas"
+                      >
+                        <span className="flex items-center gap-1.5 font-bold">
+                          {lockCustomBackground ? <PinOff size={13} /> : <Pin size={13} />}
+                          {lockCustomBackground ? 'Fondo fijado (Inmune al clima)' : 'Fijar fondo (Ignorar clima)'}
+                        </span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold ${lockCustomBackground ? 'bg-emerald-950/40 text-emerald-100' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                          {lockCustomBackground ? 'FIJADO' : 'LIBRE'}
+                        </span>
+                      </button>
+
+                      <button
+                        className="remove-background"
+                        type="button"
+                        data-testid="button-remove-background"
+                        onClick={() => {
+                          setCustomBackground('');
+                          if (background === 'custom') setBackground('mint');
+                          setToast('Imagen personalizada eliminada.');
+                        }}
+                      >
+                        Eliminar mi imagen
+                      </button>
+                    </div>
                   )}
                 </div>
               )}
@@ -2230,8 +2336,21 @@ function App() {
         </div>
       )}
 
-      {/* Modals */}
-      {modal && (
+      {/* Dex General Modal (Showdown Gen 1-5 Pokédex) */}
+      <DexGeneralModal
+        isOpen={modal === 'dex-general'}
+        onClose={() => setModal(null)}
+        onAddToTeam={handleAddFromDexToTeam}
+        onSelectAttacker={handleSelectAttackerFromDex}
+        onSelectDefender={handleSelectDefenderFromDex}
+        targetRole={dexTargetRole}
+        equipoOU={equipoOU}
+        equipoUU={equipoUU}
+        equipoNU={equipoNU}
+      />
+
+      {/* Other Modals */}
+      {modal && modal !== 'dex-general' && (
         <div
           className="modal-backdrop"
           onMouseDown={e => {
@@ -2808,23 +2927,36 @@ function App() {
 
                 {/* Tier-specific Roster List */}
                 <div className="mt-4">
-                  <div className="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700 flex-wrap gap-2">
                     <span className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
                       <span className={`tier-chip tier-chip-${activeTier}`}>{activeTier.toUpperCase()}</span>
                       Equipo Tier {activeTier.toUpperCase()} ({(activeTier === 'ou' ? equipoOU : activeTier === 'uu' ? equipoUU : equipoNU).length} Pokémon)
                     </span>
-                    {tierViewMode !== 'form' && !editing && (
-                      <button
-                        type="button"
-                        className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold hover:underline flex items-center gap-1"
-                        onClick={() => {
-                          setEditing(null);
-                          setTierViewMode('form');
-                        }}
-                      >
-                        <Plus size={12} /> Nuevo Pokémon
-                      </button>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {(activeTier === 'ou' ? equipoOU : activeTier === 'uu' ? equipoUU : equipoNU).length > 0 && (
+                        <button
+                          type="button"
+                          className="text-xs text-rose-600 dark:text-rose-400 font-semibold hover:underline flex items-center gap-1 bg-rose-50 dark:bg-rose-950/40 px-2 py-1 rounded border border-rose-200 dark:border-rose-900/40"
+                          data-testid={`button-clear-all-${activeTier}`}
+                          onClick={() => clearActiveTierList(activeTier)}
+                          title={`Limpiar toda la lista de Pokémon de Tier ${activeTier.toUpperCase()}`}
+                        >
+                          <Trash2 size={12} /> Limpiar toda la lista
+                        </button>
+                      )}
+                      {tierViewMode !== 'form' && !editing && (
+                        <button
+                          type="button"
+                          className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold hover:underline flex items-center gap-1"
+                          onClick={() => {
+                            setEditing(null);
+                            setTierViewMode('form');
+                          }}
+                        >
+                          <Plus size={12} /> Nuevo Pokémon
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="roster-list">
@@ -2845,6 +2977,7 @@ function App() {
                             </small>
                           </div>
                           <button
+                            type="button"
                             className="tiny-action"
                             aria-label={`Editar ${p.nombre}`}
                             data-testid={`button-edit-pokemon-${p.id}`}
@@ -2856,10 +2989,14 @@ function App() {
                             <Edit2 size={14} />
                           </button>
                           <button
+                            type="button"
                             className="tiny-action delete"
                             aria-label={`Eliminar ${p.nombre}`}
                             data-testid={`button-delete-pokemon-${p.id}`}
-                            onClick={() => deletePokemon(p.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deletePokemon(p.id);
+                            }}
                           >
                             <Trash2 size={14} />
                           </button>

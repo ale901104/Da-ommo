@@ -5,10 +5,11 @@ export type StageKey = Exclude<StatKey, 'hp'>;
 export type StatValues = Record<StatKey, number>;
 export type StageValues = Record<StageKey, number>;
 
-export type PokemonTier = 'ou' | 'uu' | 'nu' | 'custom';
+export type PokemonTier = 'ou' | 'uu' | 'nu' | 'custom' | 'dex';
 
 export type Pokemon = {
   id: string;
+  num?: number;
   nombre: string;
   tier?: PokemonTier;
   categoria?: string;
@@ -26,9 +27,14 @@ export type Pokemon = {
   item: string;
   ability?: string;
   abilities?: string[];
+  abilityNames?: string[];
   learnset?: string[];
   finalEvolution: boolean;
   boosts: StageValues;
+  weightkg?: number;
+  heightm?: number;
+  generation?: number;
+  color?: string;
 };
 
 export type Move = {
@@ -81,12 +87,11 @@ export const TYPES: [string, string][] = [
   ['dragon', 'Dragón'],
   ['dark', 'Siniestro'],
   ['steel', 'Acero'],
-  ['fairy', 'Hada'],
 ];
 
 export const typeName = (id: string) => TYPES.find(([key]) => key === id)?.[1] ?? id;
 
-// Authentic Pokémon Type Colors
+// Authentic Pokémon Type Colors (Gen 1-5)
 export const TYPE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   normal:   { bg: '#9FA19F', text: '#ffffff', border: '#818381' },
   fire:     { bg: '#E62829', text: '#ffffff', border: '#B81A1B' },
@@ -105,7 +110,6 @@ export const TYPE_COLORS: Record<string, { bg: string; text: string; border: str
   dragon:   { bg: '#5060E1', text: '#ffffff', border: '#3240B8' },
   dark:     { bg: '#50413F', text: '#ffffff', border: '#362B2A' },
   steel:    { bg: '#60A1B8', text: '#ffffff', border: '#427A8F' },
-  fairy:    { bg: '#EF70EF', text: '#450945', border: '#C446C4' },
 };
 
 export const TypeBadge: React.FC<{ type: string; size?: 'sm' | 'md' | 'lg'; className?: string }> = ({
@@ -221,13 +225,12 @@ export const ALL_ABILITY_DEFINITIONS: Record<string, { name: string; desc: strin
   'sand-stream': { name: 'Chorro Arena', desc: 'Invoca Tormenta de Arena' },
   'unnerve': { name: 'Nerviosismo', desc: 'Impide comer bayas al rival' },
 
-  // Standard Battle Abilities
   'none': { name: 'Ninguna', desc: 'Sin habilidad' },
   'adaptability': { name: 'Adaptable', desc: 'STAB ×2' },
   'huge-power': { name: 'Potencia', desc: 'Ataque físico ×2' },
   'pure-power': { name: 'Energía Pura', desc: 'Ataque físico ×2' },
-  'guts': { name: 'Agallas', desc: 'Ataque ×1,5 si está quemado' },
-  'sheer-force': { name: 'Potencia Bruta', desc: 'Daño ×1,3' },
+  'guts': { name: 'Agallas', desc: 'Ataque ×1,5 si tiene problema de estado' },
+  'sheer-force': { name: 'Potencia Bruta', desc: 'Daño ×1,3 anulando efecto secundario' },
   'sniper': { name: 'Francotirador', desc: 'Críticos ×2,25' },
   'tinted-lens': { name: 'Cromolente', desc: 'Poco eficaz ×2' },
   'contrary': { name: 'Respondón', desc: 'Invierte cambios de stats' },
@@ -238,18 +241,88 @@ export const ALL_ABILITY_DEFINITIONS: Record<string, { name: string; desc: strin
   'chlorophyll': { name: 'Clorofila', desc: 'Velocidad ×2 en Sol' },
   'sand-rush': { name: 'Ímpetu Arena', desc: 'Velocidad ×2 en Tormenta' },
   'slush-rush': { name: 'Quitanieves', desc: 'Velocidad ×2 en Granizo' },
-  'intimidate': { name: 'Intimidación', desc: '-1 Ataque rival' },
-  'thick-fat': { name: 'Sebo', desc: '-50% daño de Fuego y Hielo' },
+  'intimidate': { name: 'Intimidación', desc: '-1 Ataque al rival al entrar' },
+  'thick-fat': { name: 'Sebo', desc: '-50% daño recibido de Fuego y Hielo' },
   'multiscale': { name: 'Multiescamas', desc: '-50% daño con PS lleno' },
   'fur-coat': { name: 'Pelaje Recio', desc: 'Defensa física ×2' },
-  'unaware': { name: 'Ignorante', desc: 'Ignora boosts de ataque rival' },
-  'solid-rock': { name: 'Roca Sólida', desc: '-25% daño supereficaz' },
-  'filter': { name: 'Filtro', desc: '-25% daño supereficaz' },
-  'water-absorb': { name: 'Absorbe Agua', desc: 'Inmune a Agua' },
-  'flash-fire': { name: 'Absorbe Fuego', desc: 'Inmune a Fuego' },
-  'volt-absorb': { name: 'Absorbe Elec.', desc: 'Inmune a Eléctrico' },
-  'sap-sipper': { name: 'Herbívoro', desc: 'Inmune a Planta' },
-  'wonder-guard': { name: 'Superguarda', desc: 'Solo daña si es supereficaz' },
+  'unaware': { name: 'Ignorante', desc: 'Ignora boosts defensivos/ofensivos rivales' },
+  'solid-rock': { name: 'Roca Sólida', desc: '-25% daño recibido supereficaz' },
+  'filter': { name: 'Filtro', desc: '-25% daño recibido supereficaz' },
+  'water-absorb': { name: 'Absorbe Agua', desc: 'Inmune e hidrata con ataques de Agua' },
+  'flash-fire': { name: 'Absorbe Fuego', desc: 'Inmune y potencia Fuego al recibir fuego' },
+  'volt-absorb': { name: 'Absorbe Elec.', desc: 'Inmune e hidrata con Eléctrico' },
+  'motor-drive': { name: 'Electromotor', desc: 'Inmune a Eléctrico y sube +1 Velocidad' },
+  'sap-sipper': { name: 'Herbívoro', desc: 'Inmune a Planta y sube +1 Ataque' },
+  'wonder-guard': { name: 'Superguarda', desc: 'Solo recibe daño de movimientos supereficaces' },
+  'moxie': { name: 'Autoestima', desc: '+1 Ataque al derrotar a un oponente' },
+  'magic-guard': { name: 'Muro Mágico', desc: 'Inmune a todo daño indirecto (clima, vidaesfera, veneno)' },
+  'magic-bounce': { name: 'Espejomágico', desc: 'Rebota movimientos de estado y trampas' },
+  'iron-fist': { name: 'Puño Férreo', desc: '+20% daño en ataques basados en puñetazos' },
+  'reckless': { name: 'Audaz', desc: '+20% daño en ataques con daño de retroceso' },
+  'rock-head': { name: 'Cabeza Roca', desc: 'Evita daño de retroceso' },
+  'speed-boost': { name: 'Impulso', desc: '+1 Velocidad al final de cada turno' },
+  'drought': { name: 'Sequía', desc: 'Invoca Sol brillante al entrar al combate' },
+  'drizzle': { name: 'Llovizna', desc: 'Invoca Lluvia al entrar al combate' },
+  'snow-warning': { name: 'Nevada', desc: 'Invoca Granizo al entrar al combate' },
+  'prankster': { name: 'Bromista', desc: 'Prioridad +1 en movimientos de estado' },
+  'download': { name: 'Descarga', desc: '+1 Ataque o Atq Esp según la menor defensa rival' },
+  'infiltrator': { name: 'Allanamiento', desc: 'Ignora Reflejo, Pantalla Luz, Velo Sagrado y Sustituto' },
+  'sturdy': { name: 'Robustez', desc: 'Evita K.O. directo de un solo golpe con PS llenos' },
+  'mold-breaker': { name: 'Rompemoldes', desc: 'Ignora las habilidades defensivas rivales' },
+  'teravolt': { name: 'Teravoltio', desc: 'Rompemoldes de Zekrom' },
+  'turboblaze': { name: 'Turbollama', desc: 'Rompemoldes de Reshiram' },
+  'solar-power': { name: 'Poder Solar', desc: '+50% Atq Esp con Sol, pierde 1/8 PS por turno' },
+  'rain-dish': { name: 'Cura Lluvia', desc: 'Recupera 1/16 PS al final de turno con Lluvia' },
+  'ice-body': { name: 'Gélido', desc: 'Recupera 1/16 PS al final de turno con Granizo' },
+  'sand-force': { name: 'Poder Arena', desc: '+30% poder Roca, Tierra y Acero en Tormenta Arena' },
+  'defiant': { name: 'Competitivo (Defiant)', desc: '+2 Ataque cuando bajan sus estadísticas' },
+  'competitive': { name: 'Tenacidad', desc: '+2 Atq Esp cuando bajan sus estadísticas' },
+  'poison-heal': { name: 'Antídoto', desc: 'Recupera 1/8 PS por turno al estar envenenado' },
+  'iron-barbs': { name: 'Punta Acero', desc: 'Daña 1/8 PS al rival por contacto' },
+  'scrappy': { name: 'Intrépido', desc: 'Permite golpear a tipo Fantasma con Normal y Lucha' },
+  'super-luck': { name: 'Afortunado', desc: '+1 nivel al ratio de golpe crítico' },
+  'skill-link': { name: 'Encadenado', desc: 'Ataques de múltiples golpes siempre golpean 5 veces' },
+  'compound-eyes': { name: 'Ojo Compuesto', desc: '+30% de precisión en todos los ataques' },
+  'hustle': { name: 'Entusiasmo', desc: '+50% Ataque físico a cambio de -20% precisión' },
+  'sheer-cold': { name: 'Frío Extremo', desc: 'Inmunidad a congelación' },
+  'static': { name: 'Elec. Estática', desc: '30% probabilidad de paralizar por contacto' },
+  'flame-body': { name: 'Cuerpo Llama', desc: '30% probabilidad de quemar por contacto' },
+  'poison-point': { name: 'Punto Tóxico', desc: '30% probabilidad de envenenar por contacto' },
+  'effect-spore': { name: 'Efecto Espora', desc: '30% probabilidad de dormir, paralizar o envenenar' },
+  'cute-charm': { name: 'Gran Encanto', desc: '30% probabilidad de enamorar por contacto' },
+  'lightning-rod': { name: 'Pararrayos', desc: 'Atrae Eléctrico, otorga inmunidad y +1 Atq Esp' },
+  'storm-drain': { name: 'Colector', desc: 'Atrae Agua, otorga inmunidad y +1 Atq Esp' },
+  'dry-skin': { name: 'Piel Seca', desc: 'Cura con Agua, débil a Fuego' },
+  'synchronize': { name: 'Sincronía', desc: 'Traspasa quemadura, parálisis y veneno al rival' },
+  'trace': { name: 'Rastro', desc: 'Copia la habilidad del oponente al entrar' },
+  'clear-body': { name: 'Cuerpo Puro', desc: 'Evita que el rival reduzca sus estadísticas' },
+  'white-smoke': { name: 'Humo Blanco', desc: 'Evita bajada de estadísticas' },
+  'hyper-cutter': { name: 'Corte Fuerte', desc: 'Evita que bajen su estadística de Ataque' },
+  'keen-eye': { name: 'Vista Lince', desc: 'Evita bajadas de precisión e ignora evasión rival' },
+  'vital-spirit': { name: 'Espíritu Vital', desc: 'Inmune al estado de sueño' },
+  'insomnia': { name: 'Insomnio', desc: 'Inmune al estado de sueño' },
+  'immunity': { name: 'Inmunidad', desc: 'Inmune al envenenamiento' },
+  'limber': { name: 'Flexibilidad', desc: 'Inmune a la parálisis' },
+  'magma-armor': { name: 'Escudo Magma', desc: 'Inmune al congelamiento' },
+  'water-veil': { name: 'Velo Agua', desc: 'Inmune a quemaduras' },
+  'soundproof': { name: 'Insonorizar', desc: 'Inmune a movimientos de sonido' },
+  'cloud-nine': { name: 'Aclimatación', desc: 'Anula los efectos del clima en combate' },
+  'air-lock': { name: 'Bucle Aire', desc: 'Anula los efectos del clima de Rayquaza' },
+  'arena-trap': { name: 'Trampa Arena', desc: 'Impide huir a rivales en el suelo' },
+  'shadow-tag': { name: 'Sombra Trampa', desc: 'Impide huir o cambiar a Pokémon rivales' },
+  'magnet-pull': { name: 'Imán', desc: 'Impide huir o cambiar a Pokémon de tipo Acero' },
+  'suction-cups': { name: 'Ventosas', desc: 'Evita ser forzado a cambiar por Rugido/Remolino' },
+  'simple': { name: 'Simple', desc: 'Duplica todos los cambios de estadísticas (+2 pasa a +4)' },
+  'unburden': { name: 'Liviano', desc: 'Duplica Velocidad al consumir su objeto equipado' },
+  'weak-armor': { name: 'Armadura Frágil', desc: '-1 Defensa y +2 Velocidad al recibir golpe físico' },
+  'justified': { name: 'Justiciero', desc: '+1 Ataque al recibir ataques de tipo Siniestro' },
+  'rattled': { name: 'Cobardía', desc: '+1 Velocidad al recibir Bicho, Fantasma o Siniestro' },
+  'mummy': { name: 'Momia', desc: 'Transmite Momia al rival al recibir contacto' },
+  'illusion': { name: 'Ilusión', desc: 'Adopta el aspecto del último Pokémon del equipo' },
+  'imposter': { name: 'Impostor', desc: 'Se transforma automáticamente en el rival' },
+  'protean': { name: 'Mutatipo', desc: 'Cambia su tipo al del movimiento que va a ejecutar' },
+  'victory-star': { name: 'Tinovictoria', desc: '+10% precisión para el usuario y aliados' },
+  'zen-mode': { name: 'Modo Daruma', desc: 'Cambia de forma Darmanitan al tener menos del 50% PS' },
 };
 
 export const ATTACKER_ABILITIES: [string, string][] = Object.entries(ALL_ABILITY_DEFINITIONS).map(
@@ -271,8 +344,17 @@ export function getPokemonAbilities(pokemon?: Pokemon | null): [string, string][
     return [['none', 'Ninguna']];
   }
   return list.map(abilityId => {
-    const def = ALL_ABILITY_DEFINITIONS[abilityId];
-    return [abilityId, def ? `${def.name} (${def.desc})` : abilityId];
+    const slug = abilityId.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    const def = ALL_ABILITY_DEFINITIONS[slug] || ALL_ABILITY_DEFINITIONS[abilityId];
+    if (def) {
+      return [slug, `${def.name} (${def.desc})`];
+    }
+    // Fallback: title-case formatting
+    const formatted = abilityId
+      .split('-')
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ');
+    return [slug, formatted];
   });
 }
 

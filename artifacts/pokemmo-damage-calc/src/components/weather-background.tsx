@@ -5,16 +5,100 @@ type Weather = 'none' | 'sun' | 'rain' | 'sand' | 'hail';
 interface WeatherBackgroundProps {
   weather: Weather;
   defaultImage: string;
+  lockCustomBackground?: boolean;
 }
 
-export const WeatherBackground: React.FC<WeatherBackgroundProps> = ({ weather, defaultImage }) => {
-  if (weather === 'none') {
+export const WeatherBackground: React.FC<WeatherBackgroundProps> = ({
+  weather,
+  defaultImage,
+  lockCustomBackground = false,
+}) => {
+  if (weather === 'none' || lockCustomBackground) {
     return (
       <div
-        className="weather-backdrop-container default-bg"
+        className={`weather-backdrop-container default-bg ${lockCustomBackground ? 'pinned-custom-bg' : ''}`}
         style={{ backgroundImage: defaultImage }}
         aria-hidden="true"
-      />
+      >
+        {/* If custom background is locked and weather is active, show only delicate particle overlays without hiding the wallpaper */}
+        {lockCustomBackground && weather === 'rain' && (
+          <div className="weather-effect-layer rain-layer !bg-none !bg-transparent">
+            <div className="rain-drops-container">
+              {Array.from({ length: 36 }).map((_, i) => (
+                <span
+                  key={i}
+                  className="rain-drop"
+                  style={{
+                    left: `${(i * 2.8) % 100}%`,
+                    animationDelay: `${(i * 0.08) % 1.4}s`,
+                    animationDuration: `${0.45 + ((i % 5) * 0.08)}s`,
+                    opacity: 0.5,
+                    height: `${24 + ((i % 3) * 8)}px`,
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+        {lockCustomBackground && weather === 'sun' && (
+          <div className="weather-effect-layer sun-layer !bg-none !bg-transparent">
+            <div className="sun-heatwave-shimmer" />
+            <div className="sun-sparks-container">
+              {Array.from({ length: 20 }).map((_, i) => (
+                <span
+                  key={i}
+                  className="sun-spark"
+                  style={{
+                    left: `${(i * 5) % 100}%`,
+                    animationDelay: `${(i * 0.2) % 3}s`,
+                    animationDuration: `${2.5 + ((i % 4) * 0.5)}s`,
+                    width: '3px',
+                    height: '3px',
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+        {lockCustomBackground && weather === 'sand' && (
+          <div className="weather-effect-layer sand-layer !bg-none !bg-transparent">
+            <div className="sand-particles-container">
+              {Array.from({ length: 28 }).map((_, i) => (
+                <span
+                  key={i}
+                  className="sand-particle"
+                  style={{
+                    top: `${(i * 3.5) % 100}%`,
+                    animationDelay: `${(i * 0.08) % 1.5}s`,
+                    animationDuration: '0.65s',
+                    height: '2px',
+                    width: '18px',
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+        {lockCustomBackground && weather === 'hail' && (
+          <div className="weather-effect-layer hail-layer !bg-none !bg-transparent">
+            <div className="hail-particles-container">
+              {Array.from({ length: 26 }).map((_, i) => (
+                <span
+                  key={i}
+                  className="hail-chunk"
+                  style={{
+                    left: `${(i * 3.8) % 100}%`,
+                    animationDelay: `${(i * 0.09) % 1.5}s`,
+                    animationDuration: '0.65s',
+                    width: '4px',
+                    height: '4px',
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     );
   }
 

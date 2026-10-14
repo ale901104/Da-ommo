@@ -340,7 +340,6 @@ export const movimientosIniciales = [
   { id: 'venoshock', nombre: 'Carga Tóxica', tipo: 'poison', categoria: 'special', poder: 65 },
   { id: 'clear-smog', nombre: 'Niebla Clara', tipo: 'poison', categoria: 'special', poder: 50 },
   { id: 'focus-blast', nombre: 'Onda Certera', tipo: 'fighting', categoria: 'special', poder: 120 },
-  { id: 'dazzling-gleam', nombre: 'Brillo Mágico', tipo: 'fairy', categoria: 'special', poder: 80 },
   { id: 'power-gem', nombre: 'Joya de Luz', tipo: 'rock', categoria: 'special', poder: 80 },
   { id: 'grass-knot', nombre: 'Hierba Lazo', tipo: 'grass', categoria: 'special', poder: 80 },
   { id: 'giga-drain', nombre: 'Gigadrenado', tipo: 'grass', categoria: 'special', poder: 75 },
