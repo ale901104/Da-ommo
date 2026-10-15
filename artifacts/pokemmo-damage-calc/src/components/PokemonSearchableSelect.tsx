@@ -1,5 +1,6 @@
-import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronDown, Search, X } from 'lucide-react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Check, Search, X } from 'lucide-react';
+import { rawDexList } from '../dex';
 import { type Pokemon } from '../pokemon-constants';
 
 interface PokemonSearchableSelectProps {
@@ -16,7 +17,7 @@ interface PokemonSearchableSelectProps {
   className?: string;
 }
 
-// Normalize strings by removing accents, symbols and whitespace for robust predictive matching
+// Normalize strings by removing accents and non-alphanumeric characters
 function normalizeText(str: string): string {
   return str
     .toLowerCase()
@@ -26,7 +27,26 @@ function normalizeText(str: string): string {
     .trim();
 }
 
-// Highlight the matched substring in the Pokémon name
+// Find Pokédex number to retrieve official sprite
+export function getPokemonDexNum(pokemon?: Pokemon | null): number {
+  if (!pokemon) return 0;
+  if (pokemon.num && pokemon.num > 0) return pokemon.num;
+  const match = rawDexList.find(
+    d =>
+      (pokemon.id && d.id.toLowerCase() === pokemon.id.toLowerCase()) ||
+      (pokemon.nombre && d.nombre.toLowerCase() === pokemon.nombre.toLowerCase())
+  );
+  return match?.num || 0;
+}
+
+export function getPokemonSpriteUrl(num: number): string {
+  if (num > 0 && num <= 649) {
+    return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${num}.png`;
+  }
+  return '';
+}
+
+// Highlight matched characters in search query
 function highlightMatch(name: string, query: string) {
   const cleanQ = query.trim().toLowerCase();
   if (!cleanQ) return <span>{name}</span>;
@@ -45,7 +65,7 @@ function highlightMatch(name: string, query: string) {
   return (
     <span>
       {before}
-      <strong className="combobox-match-highlight">{match}</strong>
+      <strong className="pokemon-dropdown-match">{match}</strong>
       {after}
     </span>
   );
@@ -61,73 +81,80 @@ export const PokemonSearchableSelect: React.FC<PokemonSearchableSelectProps> = (
   equipoUU,
   equipoNU,
   dataTestId = 'select-pokemon',
-  placeholder = 'Escribe el nombre del Pokémon...',
+  placeholder = 'Buscar Pokémon...',
   className = '',
 }) => {
   const generatedId = useId();
   const inputId = id || generatedId;
+
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  // Tracks cursor position to prevent cursor jumping to index 0 (which causes typing in reverse)
-  const cursorRef = useRef<number | null>(null);
-
+  // Selected Pokémon based on current value
   const selectedPokemon = useMemo(() => {
     return pokemonList.find(p => p.id === value) || null;
   }, [pokemonList, value]);
 
   const [isOpen, setIsOpen] = useState(false);
   const [inputText, setInputText] = useState(selectedPokemon?.nombre ?? '');
-  const [isTyping, setIsTyping] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
 
-  // Synchronously restore cursor position before browser paint so characters are NEVER inserted at 0
-  useLayoutEffect(() => {
-    if (cursorRef.current !== null && inputRef.current && document.activeElement === inputRef.current) {
-      const pos = cursorRef.current;
-      inputRef.current.setSelectionRange(pos, pos);
-    }
-  });
-
-  // Keep input text synced with selected Pokémon when dropdown is closed or not typing
+  // Keep input text in sync when value changes externally and dropdown is closed
   useEffect(() => {
-    if (!isOpen && !isTyping) {
+    if (!isOpen) {
       setInputText(selectedPokemon?.nombre ?? '');
-      cursorRef.current = null;
     }
-  }, [selectedPokemon, isOpen, isTyping]);
+  }, [selectedPokemon, isOpen]);
 
-  // Real-time predictive search filtering
+  // Close dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+        setInputText(selectedPokemon?.nombre ?? '');
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [selectedPokemon]);
+
+  // Combined master list of all Pokémon (teams first, then Dex)
+  const masterList = useMemo(() => {
+    const map = new Map<string, Pokemon>();
+    for (const p of pokemonList) map.set(p.id, p);
+    for (const p of equipoOU) map.set(p.id, p);
+    for (const p of equipoUU) map.set(p.id, p);
+    for (const p of equipoNU) map.set(p.id, p);
+    return Array.from(map.values());
+  }, [pokemonList, equipoOU, equipoUU, equipoNU]);
+
+  // Real-time predictive search filtering without any cursor manipulation
   const filteredOptions = useMemo(() => {
     const rawQuery = inputText.trim();
     const query = normalizeText(rawQuery);
     const numClean = rawQuery.replace(/^#/, '').trim();
 
-    // If query is empty, show default ordered list (teams first, then dex)
-    if (!query) {
-      const seen = new Set<string>();
-      const ordered: Pokemon[] = [];
-
-      for (const p of [...equipoOU, ...equipoUU, ...equipoNU, ...pokemonList]) {
-        if (!seen.has(p.id)) {
-          seen.add(p.id);
-          ordered.push(p);
-        }
-      }
-      return ordered.slice(0, 50);
+    // If query matches the currently selected pokemon name, show all options ordered by Dex/team
+    if (!query || (selectedPokemon && rawQuery.toLowerCase() === selectedPokemon.nombre.toLowerCase())) {
+      const sorted = [...masterList].sort((a, b) => {
+        const numA = getPokemonDexNum(a);
+        const numB = getPokemonDexNum(b);
+        return numA - numB;
+      });
+      return sorted.slice(0, 80);
     }
 
-    // Predictive scoring of matches
     const scored: { pokemon: Pokemon; score: number }[] = [];
     const seen = new Set<string>();
 
-    for (const p of pokemonList) {
+    for (const p of masterList) {
       if (seen.has(p.id)) continue;
 
       const normName = normalizeText(p.nombre);
       const normId = normalizeText(p.id);
-      const numStr = String(p.num ?? '');
+      const dexNum = getPokemonDexNum(p);
+      const numStr = String(dexNum);
 
       let score = 0;
 
@@ -135,7 +162,7 @@ export const PokemonSearchableSelect: React.FC<PokemonSearchableSelectProps> = (
       if (normName === query || normId === query) {
         score = 100;
       }
-      // Starts with query (predictive prefix)
+      // Starts with query (prefix match, e.g. "g" -> Golbat, Gloom, Golduck, Growlithe...)
       else if (normName.startsWith(query)) {
         score = 80;
       }
@@ -148,11 +175,11 @@ export const PokemonSearchableSelect: React.FC<PokemonSearchableSelectProps> = (
       ) {
         score = 75;
       }
-      // Number match (#025 or 25)
+      // Number match
       else if (numClean && (numStr === numClean || numStr.padStart(3, '0') === numClean)) {
         score = 70;
       }
-      // Contains anywhere in name
+      // Contains in name
       else if (normName.includes(query)) {
         score = 50;
       }
@@ -167,30 +194,18 @@ export const PokemonSearchableSelect: React.FC<PokemonSearchableSelectProps> = (
       }
     }
 
-    // Sort by match score descending, then by Dex number
+    // Sort: highest score first, then by Pokédex number
     scored.sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
-      return (a.pokemon.num ?? 999) - (b.pokemon.num ?? 999);
+      const numA = getPokemonDexNum(a.pokemon);
+      const numB = getPokemonDexNum(b.pokemon);
+      return numA - numB;
     });
 
-    return scored.slice(0, 50).map(s => s.pokemon);
-  }, [inputText, pokemonList, equipoOU, equipoUU, equipoNU]);
+    return scored.slice(0, 80).map(s => s.pokemon);
+  }, [masterList, inputText, selectedPokemon]);
 
-  // Close dropdown when clicking outside and restore selected name if not chosen
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-        setIsTyping(false);
-        cursorRef.current = null;
-        setInputText(selectedPokemon?.nombre ?? '');
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [selectedPokemon]);
-
-  // Reset highlighted item when results change
+  // Reset highlighted item when list changes
   useEffect(() => {
     setHighlightedIndex(0);
   }, [filteredOptions.length]);
@@ -198,23 +213,12 @@ export const PokemonSearchableSelect: React.FC<PokemonSearchableSelectProps> = (
   const handleSelect = (pk: Pokemon) => {
     onChange(pk.id);
     setInputText(pk.nombre);
-    setIsTyping(false);
-    cursorRef.current = null;
     setIsOpen(false);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    const pos = e.target.selectionStart;
-    cursorRef.current = pos;
-    setInputText(val);
-    setIsTyping(true);
+    setInputText(e.target.value);
     if (!isOpen) setIsOpen(true);
-  };
-
-  const handleSelectOrCursorChange = (e: React.SyntheticEvent<HTMLInputElement>) => {
-    const target = e.currentTarget;
-    cursorRef.current = target.selectionStart;
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -243,63 +247,48 @@ export const PokemonSearchableSelect: React.FC<PokemonSearchableSelectProps> = (
     } else if (e.key === 'Escape') {
       e.preventDefault();
       setIsOpen(false);
-      setIsTyping(false);
-      cursorRef.current = null;
       setInputText(selectedPokemon?.nombre ?? '');
     }
   };
 
   const scrollIndexIntoView = (idx: number) => {
     if (listRef.current) {
-      const items = listRef.current.querySelectorAll('.combobox-item');
+      const items = listRef.current.querySelectorAll('.pokemon-dropdown-item');
       if (items[idx]) {
         (items[idx] as HTMLElement).scrollIntoView({ block: 'nearest' });
       }
     }
   };
 
-  // Dynamic placeholder showing current selection when user focuses to type
-  const dynamicPlaceholder = selectedPokemon ? `Actual: ${selectedPokemon.nombre}` : placeholder;
-
   return (
-    <div className={`pokemon-searchable-combobox ${className}`} ref={containerRef}>
-      <div className="combobox-input-wrapper">
-        <Search size={15} className="combobox-search-icon" />
+    <div className={`pokemon-search-field-wrapper ${className}`} ref={containerRef}>
+      {/* ONLY THE CLEAN TEXT INPUT FIELD (No top bar, no quick action buttons, no filter) */}
+      <div className="pokemon-search-input-box">
+        <Search size={16} className="pokemon-search-icon-left" />
+
         <input
           id={inputId}
           ref={inputRef}
           type="text"
           dir="ltr"
-          className="combobox-input"
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
+          className="pokemon-search-input"
           data-testid={dataTestId}
-          role="combobox"
+          aria-label={label}
           aria-expanded={isOpen}
           aria-autocomplete="list"
-          aria-label={label}
-          placeholder={dynamicPlaceholder}
+          role="combobox"
+          placeholder={selectedPokemon?.nombre || placeholder}
           value={inputText}
-          autoComplete="off"
-          spellCheck={false}
-          onFocus={() => {
+          onFocus={e => {
             setIsOpen(true);
-            if (!isTyping && selectedPokemon && inputText === selectedPokemon.nombre) {
-              setInputText('');
-              setIsTyping(true);
-              cursorRef.current = 0;
-            }
+            e.target.select();
           }}
-          onClick={e => {
-            setIsOpen(true);
-            if (!isTyping && selectedPokemon && inputText === selectedPokemon.nombre) {
-              setInputText('');
-              setIsTyping(true);
-              cursorRef.current = 0;
-            } else {
-              cursorRef.current = e.currentTarget.selectionStart;
-            }
+          onClick={() => {
+            if (!isOpen) setIsOpen(true);
           }}
-          onSelect={handleSelectOrCursorChange}
-          onKeyUp={handleSelectOrCursorChange}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
         />
@@ -307,12 +296,10 @@ export const PokemonSearchableSelect: React.FC<PokemonSearchableSelectProps> = (
         {inputText && (
           <button
             type="button"
-            className="combobox-clear-btn"
-            aria-label="Limpiar búsqueda"
+            className="pokemon-search-clear-right"
+            aria-label="Limpiar campo"
             onClick={() => {
               setInputText('');
-              setIsTyping(true);
-              cursorRef.current = 0;
               setIsOpen(true);
               inputRef.current?.focus();
             }}
@@ -320,43 +307,18 @@ export const PokemonSearchableSelect: React.FC<PokemonSearchableSelectProps> = (
             <X size={13} />
           </button>
         )}
-
-        <button
-          type="button"
-          className="combobox-toggle-btn"
-          aria-label="Desplegar lista de Pokémon"
-          tabIndex={-1}
-          onClick={() => {
-            setIsOpen(prev => !prev);
-            if (!isOpen) {
-              inputRef.current?.focus();
-            }
-          }}
-        >
-          <ChevronDown size={14} className={isOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
-        </button>
       </div>
 
+      {/* DROPDOWN LIST WITH DARK THEME, SPRITES AND NAMES (EXACT MATCH TO REFERENCE IMAGE) */}
       {isOpen && (
-        <div className="combobox-dropdown" ref={listRef} role="listbox">
-          {/* Real-time search status banner so the user clearly sees what they are writing */}
-          {inputText.trim() && (
-            <div className="combobox-search-status">
-              <span>
-                Escribiendo: <strong className="combobox-query-mark">{inputText}</strong>
-              </span>
-              <span className="combobox-count-badge">
-                {filteredOptions.length} {filteredOptions.length === 1 ? 'resultado' : 'resultados'}
-              </span>
-            </div>
-          )}
-
+        <div className="pokemon-search-dropdown" ref={listRef} role="listbox">
           {filteredOptions.length === 0 ? (
-            <div className="combobox-empty">
+            <div className="pokemon-dropdown-empty">
               <span>No se encontró ningún Pokémon para "{inputText}".</span>
             </div>
           ) : (
             filteredOptions.map((pk, idx) => {
+              const dexNum = getPokemonDexNum(pk);
               const isSelected = selectedPokemon?.id === pk.id;
               const isHighlighted = idx === highlightedIndex;
 
@@ -365,16 +327,34 @@ export const PokemonSearchableSelect: React.FC<PokemonSearchableSelectProps> = (
                   key={`${pk.id}-${idx}`}
                   role="option"
                   aria-selected={isSelected}
-                  className={`combobox-item ${isSelected ? 'selected' : ''} ${isHighlighted ? 'highlighted' : ''}`}
+                  className={`pokemon-dropdown-item ${isSelected ? 'selected' : ''} ${isHighlighted ? 'highlighted' : ''}`}
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    handleSelect(pk);
+                  }}
                   onMouseEnter={() => setHighlightedIndex(idx)}
-                  onClick={() => handleSelect(pk)}
                 >
-                  {/* Name only as requested - with highlight of what is being typed */}
-                  <span className="combobox-item-name">
+                  {/* Left: Classic Pokémon Sprite */}
+                  <div className="pokemon-dropdown-sprite-wrap">
+                    {dexNum > 0 ? (
+                      <img
+                        src={getPokemonSpriteUrl(dexNum)}
+                        alt={pk.nombre}
+                        className="pokemon-dropdown-sprite"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="pokemon-dropdown-sprite-blank" />
+                    )}
+                  </div>
+
+                  {/* Name in Crisp White Text */}
+                  <span className="pokemon-dropdown-name">
                     {highlightMatch(pk.nombre, inputText)}
                   </span>
 
-                  {isSelected && <Check size={14} className="combobox-item-check" />}
+                  {/* Checkmark indicator for currently selected */}
+                  {isSelected && <Check size={16} className="pokemon-dropdown-check" />}
                 </div>
               );
             })

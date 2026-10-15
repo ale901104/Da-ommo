@@ -332,10 +332,24 @@ function loadSaved() {
     // ignore
   }
 
+  let dexCustomizations: Record<string, Partial<Pokemon>> = {};
+  try {
+    const rawDexCust = localStorage.getItem('pokemmo-dex-customizations');
+    if (rawDexCust) {
+      const parsed = JSON.parse(rawDexCust);
+      if (parsed && typeof parsed === 'object') {
+        dexCustomizations = parsed;
+      }
+    }
+  } catch {
+    // ignore
+  }
+
   return {
     equipoOU,
     equipoUU,
     equipoNU,
+    dexCustomizations,
     movimientos,
     habilidades,
     background,
@@ -432,17 +446,39 @@ function App() {
     }
   }, [lockCustomBackground]);
 
-  // Combined pokemon list for calculation lookups: Gen 1-5 Dex plus custom team overrides
+  const [dexCustomizations, setDexCustomizations] = useState<Record<string, Partial<Pokemon>>>(
+    initial.dexCustomizations ?? {},
+  );
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('pokemmo-dex-customizations', JSON.stringify(dexCustomizations));
+    } catch {
+      // ignore
+    }
+  }, [dexCustomizations]);
+
+  // Combined pokemon list for calculation lookups: Gen 1-5 Dex plus custom team overrides and Dex customizations
   const pokemon = useMemo(() => {
     const map = new Map<string, Pokemon>();
     for (const p of allGen1To5Pokemon) {
-      map.set(p.id, p);
+      const custom = dexCustomizations[p.id];
+      map.set(p.id, custom ? { ...p, ...custom } : p);
     }
-    for (const p of equipoOU) map.set(p.id, p);
-    for (const p of equipoUU) map.set(p.id, p);
-    for (const p of equipoNU) map.set(p.id, p);
+    for (const p of equipoOU) {
+      const custom = dexCustomizations[p.id];
+      map.set(p.id, custom ? { ...p, ...custom } : p);
+    }
+    for (const p of equipoUU) {
+      const custom = dexCustomizations[p.id];
+      map.set(p.id, custom ? { ...p, ...custom } : p);
+    }
+    for (const p of equipoNU) {
+      const custom = dexCustomizations[p.id];
+      map.set(p.id, custom ? { ...p, ...custom } : p);
+    }
     return Array.from(map.values());
-  }, [equipoOU, equipoUU, equipoNU]);
+  }, [equipoOU, equipoUU, equipoNU, dexCustomizations]);
 
   const [attackerId, setAttackerId] = useState(initial.equipoOU[0]?.id ?? '');
   const [defenderId, setDefenderId] = useState(initial.equipoOU[1]?.id ?? initial.equipoOU[0]?.id ?? '');
@@ -1003,23 +1039,48 @@ function App() {
       : 'No es KO'
     : 'Sin datos';
 
-  const updatePokemonInTeams = (updater: (p: Pokemon) => Pokemon) => {
-    setEquipoOU(list => list.map(updater));
-    setEquipoUU(list => list.map(updater));
-    setEquipoNU(list => list.map(updater));
+  const updateAnyPokemon = (updater: (p: Pokemon) => Pokemon, targetId?: string) => {
+    if (!targetId) return;
+
+    if (equipoOU.some(p => p.id === targetId)) {
+      setEquipoOU(list => list.map(p => (p.id === targetId ? updater(p) : p)));
+    }
+    if (equipoUU.some(p => p.id === targetId)) {
+      setEquipoUU(list => list.map(p => (p.id === targetId ? updater(p) : p)));
+    }
+    if (equipoNU.some(p => p.id === targetId)) {
+      setEquipoNU(list => list.map(p => (p.id === targetId ? updater(p) : p)));
+    }
+
+    setDexCustomizations(prev => {
+      const current = pokemon.find(p => p.id === targetId) || allGen1To5Pokemon.find(p => p.id === targetId);
+      if (!current) return prev;
+      const updated = updater(current);
+      return {
+        ...prev,
+        [targetId]: {
+          ivs: updated.ivs,
+          evs: updated.evs,
+          nature: updated.nature,
+          item: updated.item,
+          ability: updated.ability,
+          boosts: updated.boosts,
+        },
+      };
+    });
   };
 
   // --- Handlers for direct IV/EV modifications ---
   const updateIV = (id: string | undefined, key: StatKey, value: number) => {
     if (!id) return;
     const clamped = safeInteger(value, 31, 0, 31);
-    updatePokemonInTeams(p => (p.id === id ? { ...p, ivs: { ...p.ivs, [key]: clamped } } : p));
+    updateAnyPokemon(p => ({ ...p, ivs: { ...p.ivs, [key]: clamped } }), id);
   };
 
   const updateEV = (id: string | undefined, key: StatKey, value: number) => {
     if (!id) return;
     const clamped = safeInteger(value, 0, 0, 252);
-    updatePokemonInTeams(p => (p.id === id ? { ...p, evs: { ...p.evs, [key]: clamped } } : p));
+    updateAnyPokemon(p => ({ ...p, evs: { ...p.evs, [key]: clamped } }), id);
   };
 
   const applyIVPreset = (id: string | undefined, preset: 'max31' | 'minAtk' | 'minSpe') => {
@@ -1032,7 +1093,7 @@ function App() {
       spd: 31,
       spe: preset === 'minSpe' ? 0 : 31,
     };
-    updatePokemonInTeams(p => (p.id === id ? { ...p, ivs: newIvs } : p));
+    updateAnyPokemon(p => ({ ...p, ivs: newIvs }), id);
     setToast('IVs actualizados.');
   };
 
@@ -1046,18 +1107,18 @@ function App() {
       spd: evs.spd ?? 0,
       spe: evs.spe ?? 0,
     };
-    updatePokemonInTeams(p => (p.id === id ? { ...p, evs: newEvs } : p));
+    updateAnyPokemon(p => ({ ...p, evs: newEvs }), id);
     setToast('EVs actualizados.');
   };
 
   const updateHeldItem = (id: string | undefined, heldItem: string) => {
     if (!id) return;
-    updatePokemonInTeams(p => (p.id === id ? { ...p, item: heldItem } : p));
+    updateAnyPokemon(p => ({ ...p, item: heldItem }), id);
   };
 
   const updateNature = (id: string | undefined, nat: string) => {
     if (!id) return;
-    updatePokemonInTeams(p => (p.id === id ? { ...p, nature: nat } : p));
+    updateAnyPokemon(p => ({ ...p, nature: nat }), id);
   };
 
   const updateLevel = (which: 'attacker' | 'defender', by: number) =>
@@ -1065,16 +1126,17 @@ function App() {
 
   const updateBoost = (id: string | undefined, key: StageKey, change: number) => {
     if (!id) return;
-    updatePokemonInTeams(p =>
-      p.id === id ? { ...p, boosts: { ...p.boosts, [key]: Math.max(-6, Math.min(6, p.boosts[key] + change)) } } : p,
+    updateAnyPokemon(
+      p => ({ ...p, boosts: { ...p.boosts, [key]: Math.max(-6, Math.min(6, p.boosts[key] + change)) } }),
+      id,
     );
   };
 
   const postMoveChange = attacker && move ? moveStageOutcome(attacker, move, attackerAbility, customAbility) : null;
 
   const clearActiveBoosts = () => {
-    const active = new Set([attackerId, defenderId]);
-    updatePokemonInTeams(p => (active.has(p.id) ? { ...p, boosts: { ...DEFAULT_BOOSTS } } : p));
+    if (attackerId) updateAnyPokemon(p => ({ ...p, boosts: { ...DEFAULT_BOOSTS } }), attackerId);
+    if (defenderId) updateAnyPokemon(p => ({ ...p, boosts: { ...DEFAULT_BOOSTS } }), defenderId);
   };
 
   async function handleBackgroundUpload(event: ChangeEvent<HTMLInputElement>) {

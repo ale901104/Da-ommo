@@ -619,50 +619,172 @@
 .app-shell[data-theme="dark"] .dex-quick-pick-btn {background:rgba(68,142,126,.15);border-color:rgba(139,224,188,.3);color:#8be0bc;}
 .app-shell[data-theme="dark"] .dex-quick-pick-btn:hover {background:rgba(68,142,126,.26);color:#b3f4db;}
 
-/* Pokemon Searchable Combobox Select */
-.pokemon-searchable-combobox {position:relative;width:100%;margin-top:4px;}
-.combobox-input-wrapper {position:relative;display:flex;align-items:center;width:100%;}
-.combobox-input {width:100%;height:40px;border-radius:10px;border:1.5px solid rgba(122,157,161,.3);padding:0 50px 0 34px;font-size:15px;font-weight:700;background:#ffffff;color:#11343b;outline:none;direction:ltr!important;text-align:left!important;unicode-bidi:normal!important;transition:border-color .15s ease,box-shadow .15s ease;}
-.combobox-input:focus {border-color:#246c61;box-shadow:0 0 0 3px rgba(36,108,97,.15);}
-.app-shell[data-theme="dark"] .combobox-input {background:#172a33;border-color:rgba(168,206,203,.2);color:#f1f8f6;}
-.app-shell[data-theme="dark"] .combobox-input::placeholder {color:#759b9e;}
-.app-shell[data-theme="dark"] .combobox-input:focus {border-color:#48a28e;box-shadow:0 0 0 3px rgba(72,162,142,.25);}
-.combobox-clear-btn {position:absolute;right:26px;width:18px;height:18px;border-radius:999px;background:rgba(0,0,0,.08);color:#58757a;display:grid;place-items:center;cursor:pointer;border:0;}
-.app-shell[data-theme="dark"] .combobox-clear-btn {background:rgba(255,255,255,.12);color:#d0e2e0;}
-.combobox-toggle-btn {position:absolute;right:6px;width:20px;height:20px;display:grid;place-items:center;color:#607e84;background:transparent;border:0;cursor:pointer;}
-.app-shell[data-theme="dark"] .combobox-toggle-btn {color:#a1bec2;}
+/* ============================================================
+   STREAMLINED POKEMON SEARCH FIELD & DROPDOWN (ONLY INPUT & DARK SPRITE LIST)
+   ============================================================ */
+.pokemon-search-field-wrapper {
+  position: relative;
+  width: 100%;
+  margin-top: 2px;
+}
 
-.combobox-dropdown {position:absolute;top:calc(100% + 4px);left:0;right:0;max-height:280px;overflow-y:auto;background:#ffffff;border-radius:12px;border:1.5px solid rgba(122,157,161,.28);box-shadow:0 12px 32px rgba(17,45,49,.18);z-index:100;padding:4px;display:flex;flex-direction:column;gap:2px;}
-.app-shell[data-theme="dark"] .combobox-dropdown {background:#152830;border-color:rgba(168,206,203,.2);box-shadow:0 12px 32px rgba(0,0,0,.6);}
-.combobox-search-status {display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:#eef7f4;border-bottom:1px solid rgba(122,157,161,.2);border-radius:8px 8px 0 0;font-size:12px;color:#215951;font-weight:600;}
-.app-shell[data-theme="dark"] .combobox-search-status {background:#19353e;border-bottom-color:rgba(168,206,203,.15);color:#9fe2cb;}
-.combobox-query-mark {background:#bbf0de;color:#0d4239;padding:1px 6px;border-radius:4px;font-weight:800;}
-.app-shell[data-theme="dark"] .combobox-query-mark {background:#255d52;color:#c9f7e8;}
-.combobox-count-badge {font-size:10.5px;opacity:.85;font-family:var(--app-font-mono);}
-.combobox-match-highlight {color:#0b7a67;font-weight:900;text-decoration:underline;text-decoration-color:#246c61;}
-.app-shell[data-theme="dark"] .combobox-match-highlight {color:#5eead4;text-decoration-color:#5eead4;}
-.combobox-item {display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-radius:8px;cursor:pointer;transition:background .12s ease;user-select:none;min-height:36px;}
-.combobox-item:hover, .combobox-item.highlighted {background:#eaf4f1;}
-.app-shell[data-theme="dark"] .combobox-item:hover, .app-shell[data-theme="dark"] .combobox-item.highlighted {background:#1f3b45;}
-.combobox-item.selected {background:#d7ede5;font-weight:700;}
-.app-shell[data-theme="dark"] .combobox-item.selected {background:#274a44;}
-.combobox-item-name {font-size:13.5px;font-weight:600;color:#1e3d43;}
-.app-shell[data-theme="dark"] .combobox-item-name {color:#e5f2ef;}
-.combobox-tier-chip {font-size:9px;font-family:var(--app-font-mono);font-weight:800;padding:1px 5px;border-radius:4px;}
-.combobox-tier-chip.tier-ou {background:#fee2e2;color:#991b1b;}
-.combobox-tier-chip.tier-uu {background:#e0e7ff;color:#3730a3;}
-.combobox-tier-chip.tier-nu {background:#ccfbf1;color:#115e59;}
-.combobox-tier-chip.tier-dex {background:#fef3c7;color:#92400e;}
-.app-shell[data-theme="dark"] .combobox-tier-chip.tier-ou {background:rgba(153,27,27,.35);color:#fca5a5;}
-.app-shell[data-theme="dark"] .combobox-tier-chip.tier-uu {background:rgba(55,48,163,.35);color:#c7d2fe;}
-.app-shell[data-theme="dark"] .combobox-tier-chip.tier-nu {background:rgba(17,94,89,.35);color:#99f6e4;}
-.app-shell[data-theme="dark"] .combobox-tier-chip.tier-dex {background:rgba(180,83,9,.35);color:#fde68a;}
-.combobox-item-badges {display:flex;align-items:center;gap:4px;}
-.combobox-item-bst {font-size:10px;font-family:var(--app-font-mono);color:#5a7b81;margin-left:auto;}
-.app-shell[data-theme="dark"] .combobox-item-bst {color:#9ab5b8;}
-.combobox-item-check {color:#246c61;margin-left:4px;}
-.app-shell[data-theme="dark"] .combobox-item-check {color:#8be0bc;}
-.combobox-empty {padding:14px;text-align:center;font-size:12px;color:#6d8e94;}
+.pokemon-search-input-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.pokemon-search-icon-left {
+  position: absolute;
+  left: 10px;
+  color: #6b7280;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.pokemon-search-input {
+  width: 100%;
+  height: 38px;
+  border-radius: 8px;
+  background: #ffffff !important;
+  color: #111827 !important;
+  border: 1.5px solid rgba(122, 157, 161, 0.45);
+  padding: 0 32px 0 32px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: var(--app-font-serif);
+  outline: none;
+  direction: ltr !important;
+  text-align: left !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.pokemon-search-input:focus {
+  border-color: #246c61;
+  box-shadow: 0 0 0 3px rgba(36, 108, 97, 0.2);
+}
+.pokemon-search-input::placeholder {
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+.pokemon-search-clear-right {
+  position: absolute;
+  right: 7px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 0;
+  background: rgba(0, 0, 0, 0.1);
+  color: #4b5563;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  z-index: 2;
+}
+.pokemon-search-clear-right:hover {
+  background: rgba(0, 0, 0, 0.2);
+  color: #111827;
+}
+
+/* Dark Theme Dropdown with Sprites and Names */
+.pokemon-search-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  width: max(100%, 230px);
+  max-width: 300px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: #202226;
+  border-radius: 10px;
+  border: 1px solid #363940;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.65);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  overscroll-behavior: contain;
+}
+
+/* Ensure right-hand combatant column doesn't cause horizontal overflow */
+.combatant-col.def .pokemon-search-dropdown {
+  left: auto;
+  right: 0;
+}
+
+.pokemon-dropdown-item {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  min-height: 48px;
+  border-bottom: 1px solid #2d3036;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.1s ease;
+}
+.pokemon-dropdown-item:last-child {
+  border-bottom: 0;
+}
+.pokemon-dropdown-item:hover,
+.pokemon-dropdown-item.highlighted {
+  background: #2b2e35;
+}
+.pokemon-dropdown-item.selected {
+  background: #1b3530;
+}
+
+.pokemon-dropdown-sprite-wrap {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  margin-right: 10px;
+  flex-shrink: 0;
+}
+.pokemon-dropdown-sprite {
+  width: 38px;
+  height: 38px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+.pokemon-dropdown-sprite-blank {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #2e3138;
+}
+
+.pokemon-dropdown-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #ffffff;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: -0.01em;
+}
+
+.pokemon-dropdown-match {
+  color: #38bdf8;
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-color: #0284c7;
+}
+
+.pokemon-dropdown-check {
+  color: #34d399;
+  flex-shrink: 0;
+  margin-left: 6px;
+}
+
+.pokemon-dropdown-empty {
+  padding: 16px 12px;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 12px;
+}
 
 /* Pin Background Button Styles */
 .pin-weather-toggle-btn {display:inline-flex;align-items:center;gap:5px;margin-top:6px;padding:4px 9px;font-size:11px;font-weight:700;border-radius:8px;border:1px solid rgba(122,157,161,.3);background:rgba(255,255,255,.75);color:#245950;cursor:pointer;transition:all .15s ease;}
