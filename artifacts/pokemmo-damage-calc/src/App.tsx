@@ -8,8 +8,11 @@ import {
   CloudSun,
   Download,
   Edit2,
+  FlaskConical,
   Gauge,
   ImagePlus,
+  Info,
+  LogOut,
   Menu,
   Minus,
   Moon,
@@ -19,6 +22,7 @@ import {
   Plus,
   PlusCircle,
   RotateCcw,
+  Settings,
   Shield,
   Smartphone,
   Sun,
@@ -55,12 +59,29 @@ import { usePWAInstall } from './hooks/use-pwa-install';
 import { WeatherBackground } from './components/weather-background';
 import { allGen1To5Pokemon, convertDexToPokemon } from './dex';
 import { DexGeneralModal } from './components/DexGeneralModal';
-import { PokemonSearchableSelect } from './components/PokemonSearchableSelect';
+import { PokemonSearchableSelect, getPokemonDexNum, getPokemonShowdownSpriteStyle } from './components/PokemonSearchableSelect';
+import { TeamBuilderView } from './components/TeamBuilderView';
+import { PokemonDexView } from './components/PokemonDexView';
+import { MovesView } from './components/MovesView';
+import { SettingsView } from './components/SettingsView';
+import { InfoView } from './components/InfoView';
 
 type ModalKind = 'pokemon' | 'movimiento' | 'apk-guide' | 'ivev-attacker' | 'ivev-defender' | 'dex-general' | null;
 type Weather = 'none' | 'sun' | 'rain' | 'sand' | 'hail';
-type Field = 'none' | 'reflect' | 'light-screen' | 'tailwind';
-type FieldSide = 'both' | 'attacker' | 'defender';
+export interface FieldEffects {
+  tailwind: boolean;
+  trickRoom: boolean;
+  lightScreen: boolean;
+  reflect: boolean;
+}
+
+const DEFAULT_FIELD_EFFECTS: FieldEffects = {
+  tailwind: false,
+  trickRoom: false,
+  lightScreen: false,
+  reflect: false,
+};
+
 type BackgroundChoice = 'mint' | 'dusk' | 'aurora' | 'custom';
 type ThemeChoice = 'light' | 'dark';
 
@@ -107,19 +128,6 @@ const weatherOptions: [Weather, string][] = [
   ['rain', 'Lluvia torrencial'],
   ['sand', 'Tormenta de arena'],
   ['hail', 'Granizo y nieve'],
-];
-
-const fieldOptions: [Field, string][] = [
-  ['none', 'Sin efecto'],
-  ['reflect', 'Reflejo (Físico -50%)'],
-  ['light-screen', 'Pantalla de Luz (Esp. -50%)'],
-  ['tailwind', 'Viento Afín (Velocidad ×2)'],
-];
-
-const fieldSideOptions: [FieldSide, string][] = [
-  ['both', 'Ambos campos'],
-  ['attacker', 'Campo atacante'],
-  ['defender', 'Campo defensor'],
 ];
 
 function safeInteger(value: unknown, fallback: number, min: number, max: number) {
@@ -426,6 +434,18 @@ function compressBackground(file: File): Promise<string> {
   });
 }
 
+export type AppView = 'dex' | 'calc' | 'moves' | 'builder' | 'settings' | 'info';
+
+export const DRAWER_ITEMS = [
+  { id: 'dex', label: 'Pokemon dex', icon: BookOpen },
+  { id: 'calc', label: 'Calculadora', icon: Swords },
+  { id: 'moves', label: 'Movimientos', icon: Zap },
+  { id: 'builder', label: 'Builder', icon: FlaskConical },
+  { id: 'settings', label: 'Configuración', icon: Palette },
+  { id: 'info', label: 'Información', icon: CircleHelp },
+  { id: 'salir', label: 'Salir', icon: LogOut },
+] as const;
+
 function App() {
   const initial = useMemo(loadSaved, []);
   const [equipoOU, setEquipoOU] = useState<Pokemon[]>(initial.equipoOU);
@@ -493,12 +513,55 @@ function App() {
 
   const [weather, setWeather] = useState<Weather>('none');
   const [critical, setCritical] = useState(false);
-  const [burned, setBurned] = useState(false);
-  const [lowHp, setLowHp] = useState(false);
-  const [field, setField] = useState<Field>('none');
-  const [fieldSide, setFieldSide] = useState<FieldSide>('both');
+  const [attackerBurned, setAttackerBurned] = useState(false);
+  const [attackerPoisoned, setAttackerPoisoned] = useState(false);
+  const [defenderBurned, setDefenderBurned] = useState(false);
+  const [defenderPoisoned, setDefenderPoisoned] = useState(false);
+  const [attackerField, setAttackerField] = useState<FieldEffects>(DEFAULT_FIELD_EFFECTS);
+  const [defenderField, setDefenderField] = useState<FieldEffects>(DEFAULT_FIELD_EFFECTS);
+
+  const toggleAttackerField = (key: keyof FieldEffects) => {
+    setAttackerField(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const toggleDefenderField = (key: keyof FieldEffects) => {
+    setDefenderField(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const toggleAttackerBurned = () => {
+    setAttackerBurned(prev => {
+      const next = !prev;
+      if (next) setAttackerPoisoned(false);
+      return next;
+    });
+  };
+
+  const toggleAttackerPoisoned = () => {
+    setAttackerPoisoned(prev => {
+      const next = !prev;
+      if (next) setAttackerBurned(false);
+      return next;
+    });
+  };
+
+  const toggleDefenderBurned = () => {
+    setDefenderBurned(prev => {
+      const next = !prev;
+      if (next) setDefenderPoisoned(false);
+      return next;
+    });
+  };
+
+  const toggleDefenderPoisoned = () => {
+    setDefenderPoisoned(prev => {
+      const next = !prev;
+      if (next) setDefenderBurned(false);
+      return next;
+    });
+  };
 
   const [drawer, setDrawer] = useState(false);
+  const [currentView, setCurrentView] = useState<AppView>('calc');
   const [openSections, setOpenSections] = useState({ pokemon: true, moves: false, abilities: false, backgrounds: false });
   const [openTiers, setOpenTiers] = useState<{ dex: boolean; ou: boolean; uu: boolean; nu: boolean }>({
     dex: true,
@@ -511,6 +574,92 @@ function App() {
   const [modal, setModal] = useState<ModalKind>(null);
   const [editing, setEditing] = useState<Pokemon | Move | null>(null);
   const [toast, setToast] = useState('');
+
+  // Handlers for switching views and passing data
+  const handleSelectAttackerFromDexView = (pk: Pokemon) => {
+    setAttackerId(pk.id);
+    setAttackerAbility('none');
+    setCurrentView('calc');
+    setToast(`⚡ ${pk.nombre} cargado como Atacante.`);
+  };
+
+  const handleSelectDefenderFromDexView = (pk: Pokemon) => {
+    setDefenderId(pk.id);
+    setDefenderAbility('none');
+    setCurrentView('calc');
+    setToast(`🛡️ ${pk.nombre} cargado como Defensor.`);
+  };
+
+  const handleAddToBuilder = (pk: Pokemon) => {
+    try {
+      const rawSaved = localStorage.getItem('pokemmo-builder-team-v1');
+      let team = rawSaved ? JSON.parse(rawSaved) : [];
+      if (!Array.isArray(team) || team.length !== 6) {
+        team = Array.from({ length: 6 }, (_, i) => ({
+          id: `slot-${i + 1}`,
+          pokemonId: '',
+          nombre: '',
+          item: 'life-orb',
+          ability: 'none',
+          nature: 'adamant',
+          moves: ['', '', '', ''],
+          evs: { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 },
+          ivs: { hp: 31, atk: 31, def: 31, spa: 31, spd: 31, spe: 31 },
+          level: 50,
+        }));
+      }
+      const emptyIdx = team.findIndex((s: any) => !s.pokemonId);
+      const targetIdx = emptyIdx !== -1 ? emptyIdx : 0;
+      const pkMoves = getPokemonMoves(pk.id);
+      team[targetIdx] = {
+        ...team[targetIdx],
+        pokemonId: pk.id,
+        nombre: pk.nombre,
+        ability: pk.habilidad || 'none',
+        nature: pk.nature || 'adamant',
+        item: pk.item || 'life-orb',
+        moves: [pkMoves[0]?.id || '', pkMoves[1]?.id || '', pkMoves[2]?.id || '', pkMoves[3]?.id || ''],
+      };
+      localStorage.setItem('pokemmo-builder-team-v1', JSON.stringify(team));
+      setCurrentView('builder');
+      setToast(`🧪 ${pk.nombre} añadido al Slot #${targetIdx + 1} del Builder.`);
+    } catch {
+      setCurrentView('builder');
+    }
+  };
+
+  const handleSendFromBuilderToCalc = (pk: Pokemon, role: 'attacker' | 'defender', moveName?: string) => {
+    if (role === 'attacker') {
+      setAttackerId(pk.id);
+      setAttackerAbility(pk.habilidad || 'none');
+      setAttackerLevel(50);
+      if (moveName) {
+        const matchMove = moves.find(
+          m =>
+            m.nombre.toLowerCase() === moveName.toLowerCase() ||
+            m.id.toLowerCase() === moveName.toLowerCase()
+        );
+        if (matchMove) setMoveId(matchMove.id);
+      }
+      setToast(`⚡ ${pk.nombre} cargado como Atacante desde el Builder.`);
+    } else {
+      setDefenderId(pk.id);
+      setDefenderAbility(pk.habilidad || 'none');
+      setDefenderLevel(50);
+      setToast(`🛡️ ${pk.nombre} cargado como Defensor desde el Builder.`);
+    }
+    setCurrentView('calc');
+  };
+
+  const handleSelectMoveInCalc = (mId: string) => {
+    setMoveId(mId);
+    setCurrentView('calc');
+  };
+
+  const handleDeleteMove = (moveId: string) => {
+    setMoves(prev => prev.filter(m => m.id !== moveId));
+    setToast('Movimiento eliminado.');
+  };
 
   // Dex General selection state
   const [dexTargetRole, setDexTargetRole] = useState<'attacker' | 'defender' | null>(null);
@@ -740,11 +889,13 @@ function App() {
       atkAbilityNote = 'Quitanieves (×2)';
     }
 
-    const attackerHasTailwind = field === 'tailwind' && (fieldSide === 'attacker' || fieldSide === 'both');
-    const atkFieldMod = attackerHasTailwind ? 2 : 1;
-    let atkFieldNote = attackerHasTailwind
-      ? (fieldSide === 'both' ? 'Viento Afín en ambos (×2)' : 'Viento Afín en campo propio (×2)')
-      : '';
+    if (attackerAbility === 'quick-feet' && (attackerBurned || attackerPoisoned)) {
+      atkAbilityMod *= 1.5;
+      atkAbilityNote = 'Pies Rápidos con estado (×1,5)';
+    }
+
+    const atkFieldMod = attackerField.tailwind ? 2 : 1;
+    const atkFieldNote = attackerField.tailwind ? 'Viento Afín en campo propio (×2)' : '';
     const finalAttackerSpe = Math.floor(stagedAttackerSpe * atkItemMod * atkAbilityMod * atkFieldMod);
 
     // Defender speed
@@ -776,12 +927,16 @@ function App() {
       defAbilityNote = 'Quitanieves (×2)';
     }
 
-    const defenderHasTailwind = field === 'tailwind' && (fieldSide === 'defender' || fieldSide === 'both');
-    const defFieldMod = defenderHasTailwind ? 2 : 1;
-    let defFieldNote = defenderHasTailwind
-      ? (fieldSide === 'both' ? 'Viento Afín en ambos (×2)' : 'Viento Afín en campo rival (×2)')
-      : '';
+    if (defenderAbility === 'quick-feet' && (defenderBurned || defenderPoisoned)) {
+      defAbilityMod *= 1.5;
+      defAbilityNote = 'Pies Rápidos con estado (×1,5)';
+    }
+
+    const defFieldMod = defenderField.tailwind ? 2 : 1;
+    const defFieldNote = defenderField.tailwind ? 'Viento Afín en campo rival (×2)' : '';
     const finalDefenderSpe = Math.floor(stagedDefenderSpe * defItemMod * defAbilityMod * defFieldMod);
+
+    const isTrickRoom = attackerField.trickRoom || defenderField.trickRoom;
 
     // Priority Check
     const movePriority = move?.priority ?? (
@@ -803,18 +958,30 @@ function App() {
       headline = `🛡️ ${defender.nombre} ataca primero (Prioridad negativa)`;
       detail = `${move?.nombre || 'Movimiento'} tiene prioridad ${movePriority}. El defensor actúa antes.`;
     } else {
-      if (finalAttackerSpe > finalDefenderSpe) {
-        winner = 'attacker';
-        headline = `⚡ ${attacker.nombre} ataca primero (${finalAttackerSpe} vs ${finalDefenderSpe} Vel)`;
-        detail = `Ventaja de velocidad de +${finalAttackerSpe - finalDefenderSpe} puntos para el atacante.`;
-      } else if (finalDefenderSpe > finalAttackerSpe) {
-        winner = 'defender';
-        headline = `🛡️ ${defender.nombre} ataca primero (${finalDefenderSpe} vs ${finalAttackerSpe} Vel)`;
-        detail = `El rival supera en +${finalDefenderSpe - finalAttackerSpe} puntos de velocidad al atacante.`;
-      } else {
+      if (finalAttackerSpe === finalDefenderSpe) {
         winner = 'tie';
         headline = `⚔️ Empate de velocidad (${finalAttackerSpe} Vel)`;
         detail = `Ambos Pokémon tienen exactamente la misma velocidad. Probabilidad de turno: 50% / 50%.`;
+      } else if (isTrickRoom) {
+        if (finalAttackerSpe < finalDefenderSpe) {
+          winner = 'attacker';
+          headline = `🌀 ${attacker.nombre} ataca primero por Espacio Raro (${finalAttackerSpe} vs ${finalDefenderSpe} Vel)`;
+          detail = `En Espacio Raro el Pokémon más lento ataca primero. El atacante es más lento.`;
+        } else {
+          winner = 'defender';
+          headline = `🌀 ${defender.nombre} ataca primero por Espacio Raro (${finalDefenderSpe} vs ${finalAttackerSpe} Vel)`;
+          detail = `En Espacio Raro el Pokémon más lento ataca primero. El defensor es más lento.`;
+        }
+      } else {
+        if (finalAttackerSpe > finalDefenderSpe) {
+          winner = 'attacker';
+          headline = `⚡ ${attacker.nombre} ataca primero (${finalAttackerSpe} vs ${finalDefenderSpe} Vel)`;
+          detail = `Ventaja de velocidad de +${finalAttackerSpe - finalDefenderSpe} puntos para el atacante.`;
+        } else {
+          winner = 'defender';
+          headline = `🛡️ ${defender.nombre} ataca primero (${finalDefenderSpe} vs ${finalAttackerSpe} Vel)`;
+          detail = `El rival supera en +${finalDefenderSpe - finalAttackerSpe} puntos de velocidad al atacante.`;
+        }
       }
     }
 
@@ -829,6 +996,7 @@ function App() {
       winner,
       headline,
       detail,
+      isTrickRoom,
       attackerBarPct: (finalAttackerSpe / maxSpeed) * 100,
       defenderBarPct: (finalDefenderSpe / maxSpeed) * 100,
       atkItemNote,
@@ -838,7 +1006,22 @@ function App() {
       defAbilityNote,
       defFieldNote,
     };
-  }, [attacker, defender, move, attackerLevel, defenderLevel, attackerAbility, defenderAbility, weather, field, fieldSide]);
+  }, [
+    attacker,
+    defender,
+    move,
+    attackerLevel,
+    defenderLevel,
+    attackerAbility,
+    defenderAbility,
+    weather,
+    attackerField,
+    defenderField,
+    attackerBurned,
+    attackerPoisoned,
+    defenderBurned,
+    defenderPoisoned,
+  ]);
 
   // --- Damage Calculation ---
   const calc = useMemo(() => {
@@ -884,6 +1067,11 @@ function App() {
       def = Math.floor(def * 2);
     }
 
+    // Marvel Scale boosts defense by 50% if status condition
+    if (defenderAbility === 'marvel-scale' && (defenderBurned || defenderPoisoned)) {
+      def = Math.floor(def * 1.5);
+    }
+
     // Sandstorm SpD boost for Rock types
     if (weather === 'sand' && move.categoria === 'special' && (defender.tipo1 === 'rock' || defender.tipo2 === 'rock')) {
       def = Math.floor(def * 1.5);
@@ -920,16 +1108,6 @@ function App() {
       if (attackerAbility === 'tinted-lens' && eff < 1 && eff > 0) abilityMod = 2;
       // Starmie Analytic: +30% boost if moving after defender
       if (attackerAbility === 'analytic' && speedCalc?.winner === 'defender') abilityMod = 1.3;
-
-      if (
-        lowHp &&
-        ((attackerAbility === 'blaze' && move.tipo === 'fire') ||
-          (attackerAbility === 'torrent' && move.tipo === 'water') ||
-          (attackerAbility === 'overgrow' && move.tipo === 'grass') ||
-          (attackerAbility === 'swarm' && move.tipo === 'bug'))
-      ) {
-        abilityMod = 1.5;
-      }
     }
 
     if (customAbility?.effect === 'damage' && customAbilityMatches) {
@@ -966,23 +1144,37 @@ function App() {
 
     const attackAbilityMod =
       move.categoria === 'physical' && ['huge-power', 'pure-power'].includes(attackerAbility) ? 2 : 1;
-    const gutsMod = attackerAbility === 'guts' && burned && move.categoria === 'physical' ? 1.5 : 1;
-    const burnMod = burned && move.categoria === 'physical' && attackerAbility !== 'guts' ? 0.5 : 1;
 
-    const effectiveAtk = Math.floor(atk * itemStatMod * attackAbilityMod * gutsMod * burnMod);
+    // Guts & Toxic Boost
+    const hasStatus = attackerBurned || attackerPoisoned;
+    const gutsMod = attackerAbility === 'guts' && hasStatus && move.categoria === 'physical' ? 1.5 : 1;
+    const toxicBoostMod = attackerAbility === 'toxic-boost' && attackerPoisoned && move.categoria === 'physical' ? 1.5 : 1;
+
+    // Burn halves physical damage unless Guts or Facade
+    const isFacade = move.id === 'facade';
+    const burnMod = attackerBurned && move.categoria === 'physical' && attackerAbility !== 'guts' && !isFacade ? 0.5 : 1;
+
+    const effectiveAtk = Math.floor(atk * itemStatMod * attackAbilityMod * gutsMod * toxicBoostMod * burnMod);
+
+    let movePower = move.poder;
+    // Facade power doubles to 140 if burned or poisoned
+    if (isFacade && hasStatus) {
+      movePower = 140;
+    }
 
     let itemPower = attacker.item === `${move.tipo}-gem` ? 1.3 : attacker.item === 'life-orb' ? 1.3 : 1;
     if (attacker.item === 'expert-belt' && eff > 1) itemPower = 1.2;
 
-    const defenderHasScreen =
-      !critical && (fieldSide === 'defender' || fieldSide === 'both');
-
-    const screen =
-      defenderHasScreen &&
-      ((field === 'reflect' && move.categoria === 'physical') ||
-        (field === 'light-screen' && move.categoria === 'special'))
-        ? 0.5
-        : 1;
+    // Defender Screens (Reflejo reduces physical, Pantalla Luz reduces special)
+    // Critical hits ignore screens
+    let screen = 1;
+    if (!critical) {
+      if (defenderField.reflect && move.categoria === 'physical') {
+        screen = 0.5;
+      } else if (defenderField.lightScreen && move.categoria === 'special') {
+        screen = 0.5;
+      }
+    }
 
     const criticalMod = critical ? (attackerAbility === 'sniper' ? 2.25 : 1.5) : 1;
 
@@ -990,19 +1182,90 @@ function App() {
       eff === 0
         ? 0
         : Math.floor(
-            Math.floor((Math.floor((2 * attackerLevel) / 5 + 2) * move.poder * effectiveAtk) / Math.max(1, def)) / 50,
+            Math.floor((Math.floor((2 * attackerLevel) / 5 + 2) * movePower * effectiveAtk) / Math.max(1, def)) / 50,
           ) + 2;
 
     const modifier = stab * eff * weatherMod * abilityMod * defenderAbilityMod * itemPower * screen * criticalMod;
     const lo = eff === 0 ? 0 : Math.floor(base * modifier * 0.85);
     const hi = eff === 0 ? 0 : Math.floor(base * modifier);
 
+    const minPct = hp && eff > 0 ? (lo / hp) * 100 : 0;
+    const maxPct = hp && eff > 0 ? (hi / hp) * 100 : 0;
+
+    // Remaining HP
+    const remainingMin = Math.max(0, hp - hi);
+    const remainingMax = Math.max(0, hp - lo);
+
+    const remainingMinPct = hp > 0 ? Math.max(0, Math.min(100, (remainingMin / hp) * 100)) : 0;
+    const remainingMaxPct = hp > 0 ? Math.max(0, Math.min(100, (remainingMax / hp) * 100)) : 0;
+
+    const remainingText =
+      eff === 0
+        ? `${hp.toFixed(1)}`
+        : remainingMin === remainingMax
+        ? remainingMin.toFixed(1)
+        : `${remainingMin.toFixed(1)}-${remainingMax.toFixed(1)}`;
+
+    // KO analysis & guaranteed hits
+    let koBadge = 'Sin datos';
+    let koCategory: 'immune' | 'ohko' | 'possible' | 'hits' = 'hits';
+    let koIcon = '⚔️';
+    let koFullDetail = '';
+    let guaranteedHits = 0;
+    let minHits = 0;
+
+    if (eff === 0) {
+      koBadge = 'Inmune (0%)';
+      koCategory = 'immune';
+      koIcon = '🚫';
+      koFullDetail = 'Inmune · No causa daño';
+    } else if (lo >= hp) {
+      koBadge = '¡KO seguro!';
+      koCategory = 'ohko';
+      koIcon = '💥';
+      koFullDetail = '¡KO seguro en 1 golpe! (100% OHKO)';
+      guaranteedHits = 1;
+      minHits = 1;
+    } else if (hi >= hp) {
+      guaranteedHits = Math.ceil(hp / Math.max(1, lo));
+      minHits = 1;
+      koBadge = `Posible KO (1 o ${guaranteedHits} golpes)`;
+      koCategory = 'possible';
+      koIcon = '⚠️';
+      koFullDetail = `Posible KO en 1 golpe · KO seguro en ${guaranteedHits} golpes`;
+    } else {
+      guaranteedHits = Math.ceil(hp / Math.max(1, lo));
+      minHits = Math.ceil(hp / Math.max(1, hi));
+      koCategory = 'hits';
+      koIcon = '🛡️';
+      if (minHits === guaranteedHits) {
+        koBadge = `KO seguro en ${guaranteedHits} golpes`;
+        koFullDetail = `No es KO · KO seguro en ${guaranteedHits} golpes`;
+      } else {
+        koBadge = `KO seguro en ${guaranteedHits} golpes`;
+        koFullDetail = `No es KO · KO seguro en ${guaranteedHits} golpes (${minHits} a ${guaranteedHits} golpes)`;
+      }
+    }
+
     return {
       hp,
       eff,
       lo,
       hi,
-      pct: hp && eff > 0 ? (hi / hp) * 100 : 0,
+      minPct,
+      maxPct,
+      pct: maxPct,
+      remainingMin,
+      remainingMax,
+      remainingMinPct,
+      remainingMaxPct,
+      remainingText,
+      koBadge,
+      koCategory,
+      koIcon,
+      koFullDetail,
+      guaranteedHits,
+      minHits,
       atk: effectiveAtk,
       def,
       burnMod,
@@ -1020,24 +1283,19 @@ function App() {
     weather,
     attackerAbility,
     defenderAbility,
-    field,
-    fieldSide,
+    attackerField,
+    defenderField,
     critical,
-    burned,
-    lowHp,
+    attackerBurned,
+    attackerPoisoned,
+    defenderBurned,
+    defenderPoisoned,
+    speedCalc?.winner,
     customAbility,
     customAbilityMatches,
   ]);
 
-  const koChance = calc
-    ? calc.eff === 0
-      ? 'Inmune (Sin daño)'
-      : calc.lo >= calc.hp
-      ? 'KO seguro (100%)'
-      : calc.hi >= calc.hp
-      ? 'Posible KO'
-      : 'No es KO'
-    : 'Sin datos';
+  const koChance = calc ? calc.koBadge : 'Sin datos';
 
   const updateAnyPokemon = (updater: (p: Pokemon) => Pokemon, targetId?: string) => {
     if (!targetId) return;
@@ -1137,6 +1395,10 @@ function App() {
   const clearActiveBoosts = () => {
     if (attackerId) updateAnyPokemon(p => ({ ...p, boosts: { ...DEFAULT_BOOSTS } }), attackerId);
     if (defenderId) updateAnyPokemon(p => ({ ...p, boosts: { ...DEFAULT_BOOSTS } }), defenderId);
+  };
+
+  const resetCombatantBoosts = (id: string | undefined) => {
+    if (id) updateAnyPokemon(p => ({ ...p, boosts: { ...DEFAULT_BOOSTS } }), id);
   };
 
   async function handleBackgroundUpload(event: ChangeEvent<HTMLInputElement>) {
@@ -1304,17 +1566,41 @@ function App() {
           <Menu size={19} />
         </button>
 
-        <div className="brand">
+        <div
+          className="brand cursor-pointer"
+          onClick={() => setCurrentView('calc')}
+          role="button"
+          tabIndex={0}
+        >
           <div className="brand-mark">
             <Swords size={18} />
           </div>
           <div>
             <div className="brand-name">PokéMMO</div>
-            <div className="brand-kicker">Calculadora de daño</div>
+            <div className="brand-kicker">
+              {currentView === 'calc' && 'Calculadora de daño'}
+              {currentView === 'dex' && 'Pokemon dex'}
+              {currentView === 'moves' && 'Movimientos'}
+              {currentView === 'builder' && 'Builder PvP 1v1'}
+              {currentView === 'settings' && 'Configuración'}
+              {currentView === 'info' && 'Información'}
+            </div>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
+          {currentView !== 'calc' && (
+            <button
+              type="button"
+              className="pwa-top-btn"
+              title="Volver a la Calculadora"
+              onClick={() => setCurrentView('calc')}
+            >
+              <Swords size={13} />
+              <span>Calculadora</span>
+            </button>
+          )}
+
           {/* APK / PWA install button */}
           <button
             type="button"
@@ -1342,9 +1628,12 @@ function App() {
               setAttackerAbility('none');
               setDefenderAbility('none');
               setCritical(false);
-              setBurned(false);
-              setLowHp(false);
-              setField('none');
+              setAttackerBurned(false);
+              setAttackerPoisoned(false);
+              setDefenderBurned(false);
+              setDefenderPoisoned(false);
+              setAttackerField(DEFAULT_FIELD_EFFECTS);
+              setDefenderField(DEFAULT_FIELD_EFFECTS);
               setAttackerLevel(50);
               setDefenderLevel(50);
               clearActiveBoosts();
@@ -1356,9 +1645,11 @@ function App() {
         </div>
       </header>
 
-      {/* Hero Banner with Offline Status */}
-      <section className="hero">
-        <div className="flex items-center justify-between">
+      {/* Calculator View (Hero + App Layout Grid) */}
+      {currentView === 'calc' && (
+        <>
+          <section className="hero">
+            <div className="flex items-center justify-between">
           <div className="eyebrow">PokéMMO Battle Kit · v2.1</div>
           <div className="offline-chip">
             <span className="offline-pulse" />
@@ -1377,7 +1668,7 @@ function App() {
       <div className="app-layout-grid">
         {/* COLUMN 1: ENFRENTAMIENTO (SIDE-BY-SIDE) & MOVIMIENTO & CONDICIONES */}
         <div className="flex flex-col gap-3">
-          {/* Matchup Card: Attacker and Defender Side by Side */}
+          {/* Matchup Card: Attacker and Defender Side by Side with Integrated Boosts & Status */}
           <section className="glass combat-card" aria-label="Escenario de combate">
             <div className="section-head">
               <span className="section-title">Enfrentamiento</span>
@@ -1415,7 +1706,7 @@ function App() {
                     {attacker.tipo2 && <TypeBadge type={attacker.tipo2} size="sm" />}
                   </div>
 
-                  {/* Searchable input for Attacker (type name to filter real-time) */}
+                  {/* Searchable input for Attacker */}
                   <PokemonSearchableSelect
                     id="select-attacker-search"
                     dataTestId="select-attacker"
@@ -1495,6 +1786,109 @@ function App() {
                     <span>⚙️ IV/EV ({Object.values(attacker.evs).reduce((a, b) => a + b, 0)}/510)</span>
                     <ChevronRight size={13} />
                   </button>
+
+                  {/* Boosts integrados debajo del Atacante */}
+                  <div className="combatant-boosts-block" data-testid="panel-boosts-attacker">
+                    <div className="combatant-boosts-header">
+                      <span className="boosts-label">Boosts Atacante</span>
+                      <button
+                        type="button"
+                        className="boosts-reset-mini"
+                        title="Restablecer boosts a 0"
+                        onClick={() => resetCombatantBoosts(attacker.id)}
+                      >
+                        <RotateCcw size={9} />
+                        <span>0</span>
+                      </button>
+                    </div>
+                    <div className="combatant-boosts-grid">
+                      {STAGE_KEYS.map(key => {
+                        const val = attacker.boosts[key];
+                        return (
+                          <div className="combatant-boost-row" key={key}>
+                            <span className="boost-stat-name">{STAT_LABELS[key]}</span>
+                            <div className="boost-stepper">
+                              <button
+                                type="button"
+                                aria-label={`Bajar ${STAT_LABELS[key]} de atacante`}
+                                data-testid={`button-boost-down-attacker-${key}`}
+                                disabled={val <= -6}
+                                onClick={() => updateBoost(attacker.id, key, -1)}
+                              >
+                                <Minus size={9} />
+                              </button>
+                              <strong
+                                className={val > 0 ? 'pos' : val < 0 ? 'neg' : 'zero'}
+                                data-testid={`text-boost-attacker-${key}`}
+                              >
+                                {val > 0 ? `+${val}` : val}
+                              </strong>
+                              <button
+                                type="button"
+                                aria-label={`Subir ${STAT_LABELS[key]} de atacante`}
+                                data-testid={`button-boost-up-attacker-${key}`}
+                                disabled={val >= 6}
+                                onClick={() => updateBoost(attacker.id, key, 1)}
+                              >
+                                <Plus size={9} />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Opciones de estado debajo de los boosts (Atacante) */}
+                  <div className="combatant-status-block" data-testid="panel-status-attacker">
+                    <div className="combatant-status-header">
+                      <span className="status-label">Estado de combate</span>
+                      {(attackerBurned || attackerPoisoned) && (
+                        <button
+                          type="button"
+                          className="boosts-reset-mini"
+                          title="Quitar estados de combate"
+                          onClick={() => {
+                            setAttackerBurned(false);
+                            setAttackerPoisoned(false);
+                          }}
+                        >
+                          <RotateCcw size={9} />
+                          <span>0</span>
+                        </button>
+                      )}
+                    </div>
+                    <div className="combatant-status-toggles">
+                      <button
+                        type="button"
+                        className={`status-btn burn ${attackerBurned ? 'active' : ''}`}
+                        data-testid="button-status-burn-attacker"
+                        onClick={toggleAttackerBurned}
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-xs">🔥</span>
+                          <span className="truncate">Quemado</span>
+                        </div>
+                        <small className="status-badge-state flex-shrink-0">
+                          {attackerBurned ? 'ACTIVO' : 'Atq −50%'}
+                        </small>
+                      </button>
+                      <button
+                        type="button"
+                        className={`status-btn poison ${attackerPoisoned ? 'active' : ''}`}
+                        data-testid="button-status-poison-attacker"
+                        onClick={toggleAttackerPoisoned}
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-xs">☠️</span>
+                          <span className="truncate">Envenenado</span>
+                        </div>
+                        <small className="status-badge-state flex-shrink-0">
+                          {attackerPoisoned ? 'ACTIVO' : '1/8 PS'}
+                        </small>
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -1527,7 +1921,7 @@ function App() {
                     {defender.tipo2 && <TypeBadge type={defender.tipo2} size="sm" />}
                   </div>
 
-                  {/* Searchable input for Defender (type name to filter real-time) */}
+                  {/* Searchable input for Defender */}
                   <PokemonSearchableSelect
                     id="select-defender-search"
                     dataTestId="select-defender"
@@ -1607,49 +2001,130 @@ function App() {
                     <span>⚙️ IV/EV ({Object.values(defender.evs).reduce((a, b) => a + b, 0)}/510)</span>
                     <ChevronRight size={13} />
                   </button>
-                </div>
-              )}
-            </div>
 
-            {/* Move Selection Row with Type Badge (Filtered strictly to Attacker learnset) */}
-            <div className="move-row">
-              <div className="move-icon">
-                <Swords size={17} />
-              </div>
-              <div className="field">
-                <label htmlFor="move-choice">Movimiento ({attacker?.nombre})</label>
-                <select
-                  id="move-choice"
-                  data-testid="select-move"
-                  value={moveId}
-                  onChange={e => setMoveId(e.target.value)}
-                >
-                  {attackerAllowedMoves.map(m => (
-                    <option key={m.id} value={m.id}>
-                      {m.nombre} · {typeName(m.tipo)} ({m.categoria === 'physical' ? 'Físico' : 'Especial'} · {m.poder} P)
-                      {m.priority ? ` [Prio +${m.priority}]` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {move && (
-                <div className="flex items-center gap-2">
-                  <TypeBadge type={move.tipo} size="sm" />
-                  <div className="move-power">{move.poder} P</div>
+                  {/* Boosts integrados debajo del Defensor */}
+                  <div className="combatant-boosts-block" data-testid="panel-boosts-defender">
+                    <div className="combatant-boosts-header">
+                      <span className="boosts-label">Boosts Defensor</span>
+                      <button
+                        type="button"
+                        className="boosts-reset-mini"
+                        title="Restablecer boosts a 0"
+                        onClick={() => resetCombatantBoosts(defender.id)}
+                      >
+                        <RotateCcw size={9} />
+                        <span>0</span>
+                      </button>
+                    </div>
+                    <div className="combatant-boosts-grid">
+                      {STAGE_KEYS.map(key => {
+                        const val = defender.boosts[key];
+                        return (
+                          <div className="combatant-boost-row" key={key}>
+                            <span className="boost-stat-name">{STAT_LABELS[key]}</span>
+                            <div className="boost-stepper">
+                              <button
+                                type="button"
+                                aria-label={`Bajar ${STAT_LABELS[key]} de defensor`}
+                                data-testid={`button-boost-down-defender-${key}`}
+                                disabled={val <= -6}
+                                onClick={() => updateBoost(defender.id, key, -1)}
+                              >
+                                <Minus size={9} />
+                              </button>
+                              <strong
+                                className={val > 0 ? 'pos' : val < 0 ? 'neg' : 'zero'}
+                                data-testid={`text-boost-defender-${key}`}
+                              >
+                                {val > 0 ? `+${val}` : val}
+                              </strong>
+                              <button
+                                type="button"
+                                aria-label={`Subir ${STAT_LABELS[key]} de defensor`}
+                                data-testid={`button-boost-up-defender-${key}`}
+                                disabled={val >= 6}
+                                onClick={() => updateBoost(defender.id, key, 1)}
+                              >
+                                <Plus size={9} />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Opciones de estado debajo de los boosts (Defensor) */}
+                  <div className="combatant-status-block" data-testid="panel-status-defender">
+                    <div className="combatant-status-header">
+                      <span className="status-label">Estado de combate</span>
+                      {(defenderBurned || defenderPoisoned) && (
+                        <button
+                          type="button"
+                          className="boosts-reset-mini"
+                          title="Quitar estados de combate"
+                          onClick={() => {
+                            setDefenderBurned(false);
+                            setDefenderPoisoned(false);
+                          }}
+                        >
+                          <RotateCcw size={9} />
+                          <span>0</span>
+                        </button>
+                      )}
+                    </div>
+                    <div className="combatant-status-toggles">
+                      <button
+                        type="button"
+                        className={`status-btn burn ${defenderBurned ? 'active' : ''}`}
+                        data-testid="button-status-burn-defender"
+                        onClick={toggleDefenderBurned}
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-xs">🔥</span>
+                          <span className="truncate">Quemado</span>
+                        </div>
+                        <small className="status-badge-state flex-shrink-0">
+                          {defenderBurned ? 'ACTIVO' : '1/8 PS'}
+                        </small>
+                      </button>
+                      <button
+                        type="button"
+                        className={`status-btn poison ${defenderPoisoned ? 'active' : ''}`}
+                        data-testid="button-status-poison-defender"
+                        onClick={toggleDefenderPoisoned}
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-xs">☠️</span>
+                          <span className="truncate">Envenenado</span>
+                        </div>
+                        <small className="status-badge-state flex-shrink-0">
+                          {defenderPoisoned ? 'ACTIVO' : '1/8 PS'}
+                        </small>
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
           </section>
 
-          {/* Conditions Card */}
-          <section className="glass conditions">
+          {/* 2. Condiciones de Batalla (Clima + Dual Fields) */}
+          <section className="glass conditions" aria-label="Condiciones de batalla">
             <div className="section-head">
-              <span className="section-title">Condiciones de batalla</span>
+              <span className="section-title">Condiciones de Batalla</span>
               <CloudSun size={15} color="#6d9290" />
             </div>
-            <div className="conditions-grid">
+
+            {/* Clima: aplica a ambos campos */}
+            <div className="weather-section">
               <div className="field">
-                <label htmlFor="weather">Clima</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label htmlFor="weather" className="font-semibold text-xs">Clima (aplica a ambos campos)</label>
+                  {weather !== 'none' && (
+                    <span className="weather-active-badge">Activo</span>
+                  )}
+                </div>
                 <select
                   id="weather"
                   data-testid="select-weather"
@@ -1682,87 +2157,236 @@ function App() {
                   </button>
                 )}
               </div>
+            </div>
 
-              <div className="field">
-                <label htmlFor="field-effect">Efecto de campo</label>
-                <select
-                  id="field-effect"
-                  data-testid="select-field-effect"
-                  value={field}
-                  onChange={e => setField(e.target.value as Field)}
-                >
-                  {fieldOptions.map(([v, label]) => (
-                    <option key={v} value={v}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
+            {/* Campos separados: Campo Atacante (Izquierda) y Campo Defensor (Derecha) */}
+            <div className="battle-fields-grid">
+              {/* Campo Atacante (Izquierda) */}
+              <div className="battle-field-col atk-field">
+                <div className="battle-field-header">
+                  <span className="combatant-role-badge">Campo Atacante</span>
+                  <small className="field-side-hint">Izquierda</small>
+                </div>
+
+                <div className="field-effects-list">
+                  <button
+                    type="button"
+                    className={`field-effect-toggle ${attackerField.tailwind ? 'active tailwind' : ''}`}
+                    data-testid="toggle-field-atk-tailwind"
+                    onClick={() => toggleAttackerField('tailwind')}
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="field-effect-icon">🌪️</span>
+                      <strong className="field-effect-name truncate">Viento Afín</strong>
+                    </div>
+                    <small className="field-effect-desc flex-shrink-0">Vel ×2</small>
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`field-effect-toggle ${attackerField.trickRoom ? 'active trick-room' : ''}`}
+                    data-testid="toggle-field-atk-trick-room"
+                    onClick={() => toggleAttackerField('trickRoom')}
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="field-effect-icon">🌀</span>
+                      <strong className="field-effect-name truncate">Espacio Raro</strong>
+                    </div>
+                    <small className="field-effect-desc flex-shrink-0">Lento 1º</small>
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`field-effect-toggle ${attackerField.lightScreen ? 'active light-screen' : ''}`}
+                    data-testid="toggle-field-atk-light-screen"
+                    onClick={() => toggleAttackerField('lightScreen')}
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="field-effect-icon">✨</span>
+                      <strong className="field-effect-name truncate">Pantalla Luz</strong>
+                    </div>
+                    <small className="field-effect-desc flex-shrink-0">Esp −50%</small>
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`field-effect-toggle ${attackerField.reflect ? 'active reflect' : ''}`}
+                    data-testid="toggle-field-atk-reflect"
+                    onClick={() => toggleAttackerField('reflect')}
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="field-effect-icon">🛡️</span>
+                      <strong className="field-effect-name truncate">Reflejo</strong>
+                    </div>
+                    <small className="field-effect-desc flex-shrink-0">Fís −50%</small>
+                  </button>
+                </div>
               </div>
 
-              <div className="field">
-                <label htmlFor="field-side">Lado del efecto</label>
-                <select
-                  id="field-side"
-                  data-testid="select-field-side"
-                  value={fieldSide}
-                  onChange={e => setFieldSide(e.target.value as FieldSide)}
-                  disabled={field === 'none'}
-                >
-                  {fieldSideOptions.map(([v, label]) => (
-                    <option key={v} value={v}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
+              {/* Campo Defensor (Derecha) */}
+              <div className="battle-field-col def-field">
+                <div className="battle-field-header def">
+                  <span className="combatant-role-badge def">Campo Defensor</span>
+                  <small className="field-side-hint">Derecha</small>
+                </div>
+
+                <div className="field-effects-list">
+                  <button
+                    type="button"
+                    className={`field-effect-toggle ${defenderField.tailwind ? 'active tailwind' : ''}`}
+                    data-testid="toggle-field-def-tailwind"
+                    onClick={() => toggleDefenderField('tailwind')}
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="field-effect-icon">🌪️</span>
+                      <strong className="field-effect-name truncate">Viento Afín</strong>
+                    </div>
+                    <small className="field-effect-desc flex-shrink-0">Vel ×2</small>
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`field-effect-toggle ${defenderField.trickRoom ? 'active trick-room' : ''}`}
+                    data-testid="toggle-field-def-trick-room"
+                    onClick={() => toggleDefenderField('trickRoom')}
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="field-effect-icon">🌀</span>
+                      <strong className="field-effect-name truncate">Espacio Raro</strong>
+                    </div>
+                    <small className="field-effect-desc flex-shrink-0">Lento 1º</small>
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`field-effect-toggle ${defenderField.lightScreen ? 'active light-screen' : ''}`}
+                    data-testid="toggle-field-def-light-screen"
+                    onClick={() => toggleDefenderField('lightScreen')}
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="field-effect-icon">✨</span>
+                      <strong className="field-effect-name truncate">Pantalla Luz</strong>
+                    </div>
+                    <small className="field-effect-desc flex-shrink-0">Esp −50%</small>
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`field-effect-toggle ${defenderField.reflect ? 'active reflect' : ''}`}
+                    data-testid="toggle-field-def-reflect"
+                    onClick={() => toggleDefenderField('reflect')}
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="field-effect-icon">🛡️</span>
+                      <strong className="field-effect-name truncate">Reflejo</strong>
+                    </div>
+                    <small className="field-effect-desc flex-shrink-0">Fís −50%</small>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* 3. Movimiento (Standalone Move Card with Golpe Crítico option) */}
+          <section className="glass move-card" aria-label="Movimiento">
+            <div className="section-head">
+              <div className="flex items-center gap-2">
+                <span className="section-title">Movimiento</span>
+                {attacker && <span className="move-attacker-tag">({attacker.nombre})</span>}
+              </div>
+              <Swords size={15} color="#6d9290" />
+            </div>
+
+            <div className="move-card-body">
+              {/* Move Selection Row */}
+              <div className="move-selection-row">
+                <div className="move-icon">
+                  <Swords size={17} />
+                </div>
+                <div className="field flex-1">
+                  <label htmlFor="move-choice">Seleccionar ataque</label>
+                  <select
+                    id="move-choice"
+                    data-testid="select-move"
+                    value={moveId}
+                    onChange={e => setMoveId(e.target.value)}
+                  >
+                    {attackerAllowedMoves.map(m => (
+                      <option key={m.id} value={m.id}>
+                        {m.nombre} · {typeName(m.tipo)} ({m.categoria === 'physical' ? 'Físico' : 'Especial'} · {m.poder} P)
+                        {m.priority ? ` [Prio +${m.priority}]` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {move && (
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <TypeBadge type={move.tipo} size="sm" />
+                    <div className="move-power">{move.poder} P</div>
+                    <span className={`move-category-chip ${move.categoria}`}>
+                      {move.categoria === 'physical' ? 'Físico' : 'Especial'}
+                    </span>
+                  </div>
+                )}
               </div>
 
-              <label className="battle-toggle">
-                <input
-                  type="checkbox"
+              {/* Option: Golpe Crítico */}
+              <div className="move-crit-row">
+                <button
+                  type="button"
+                  className={`crit-toggle-btn ${critical ? 'active' : ''}`}
                   data-testid="checkbox-critical"
-                  checked={critical}
-                  onChange={e => setCritical(e.target.checked)}
-                />
-                <span>
-                  Golpe crítico <small>{attackerAbility === 'sniper' ? '×2,25 (Francotirador)' : '×1,5'}</small>
-                </span>
-              </label>
+                  onClick={() => setCritical(v => !v)}
+                >
+                  <div className="crit-toggle-icon">💥</div>
+                  <div className="crit-toggle-info">
+                    <div className="flex items-center gap-2">
+                      <strong className="crit-title">Golpe crítico</strong>
+                      <span className={`crit-badge ${critical ? 'active' : ''}`}>
+                        {critical ? 'ACTIVADO' : 'DESACTIVADO'}
+                      </span>
+                    </div>
+                    <small className="crit-desc">
+                      {attackerAbility === 'sniper' ? '×2,25 con Francotirador' : '×1,5 de daño base'} · Ignora pantallas y defensas aumentadas
+                    </small>
+                  </div>
+                </button>
+              </div>
 
-              <label className="battle-toggle">
-                <input
-                  type="checkbox"
-                  data-testid="checkbox-burned"
-                  checked={burned}
-                  onChange={e => setBurned(e.target.checked)}
-                />
-                <span>
-                  Atacante quemado <small>{attackerAbility === 'guts' ? 'activa Agallas' : 'reduce físico'}</small>
-                </span>
-              </label>
-
-              <label className="battle-toggle col-span-2">
-                <input
-                  type="checkbox"
-                  data-testid="checkbox-low-hp"
-                  checked={lowHp}
-                  onChange={e => setLowHp(e.target.checked)}
-                />
-                <span>
-                  Atacante con PS bajos (&le; 1/3){' '}
-                  <small>activa Mar Llamas, Torrente, Espesura y Enjambre</small>
-                </span>
-              </label>
+              {/* Post-Move Stat Change (e.g. Draco Meteor, Close Combat) */}
+              {postMoveChange && attacker && (
+                <div className="post-move-effect" data-testid="text-post-move-effect">
+                  <span>
+                    Tras el golpe: {STAT_LABELS[postMoveChange.stat]} {postMoveChange.delta > 0 ? '+' : ''}
+                    {postMoveChange.delta}{' '}
+                    {attackerAbility === 'contrary' || (customAbility?.effect === 'contrary' && customAbilityMatches)
+                      ? '(Respondón)'
+                      : ''}
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="button-apply-post-move-boost"
+                    disabled={postMoveChange.delta === 0}
+                    onClick={() => {
+                      updateBoost(attacker.id, postMoveChange.stat, postMoveChange.delta);
+                      setToast('Cambio de estadística aplicado al atacante.');
+                    }}
+                  >
+                    Aplicar al siguiente cálculo
+                  </button>
+                </div>
+              )}
             </div>
           </section>
         </div>
 
-        {/* COLUMN 2: UNIFIED RESULT (DAÑO Y VELOCIDAD FUSIONADOS) & STAGE BOOSTS */}
+        {/* COLUMN 2: 4. Resultado • Daño & Velocidad */}
         <div className="flex flex-col gap-3">
-          {/* Requirement 3: UNIFIED CARD (DAÑO Y VELOCIDAD FUSIONADOS) */}
+          {/* UNIFIED CARD (DAÑO Y VELOCIDAD FUSIONADOS) */}
           <section className="glass unified-outcome-card" aria-label="Resultado de batalla">
             <div className="section-head">
               <div className="flex items-center gap-2">
-                <span className="section-title text-emerald-100">Resultado · Daño & Velocidad</span>
+                <span className="section-title text-emerald-100">Resultado • Daño & Velocidad</span>
                 <span className="ko-badge" data-testid="status-ko">
                   {koChance}
                 </span>
@@ -1845,17 +2469,6 @@ function App() {
                   <span>Daño estimado</span>
                 </div>
 
-                <div className="damage-header-row">
-                  <div className="damage-number-large" data-testid="text-damage-range">
-                    {fmt(calc.lo)}
-                    <small> – </small>
-                    {fmt(calc.hi)} <small>PS</small>
-                  </div>
-                  <div className="damage-pct-badge" data-testid="text-damage-percent">
-                    {calc.pct.toFixed(1)}% <small className="text-xs text-amber-200">máx</small>
-                  </div>
-                </div>
-
                 <p className="result-caption">
                   {move.nombre} contra {defender.nombre} ·{' '}
                   <span data-testid="text-effectiveness">
@@ -1869,14 +2482,58 @@ function App() {
                   </span>
                 </p>
 
-                {/* Defender Health Bar */}
-                <div className="hp-track">
-                  <div className="hp-fill" style={{ width: `${Math.min(100, calc.pct)}%` }} />
+                {/* Photo-inspired Damage & Remaining HP Capsule Model */}
+                <div className="photo-damage-capsule" data-testid="container-photo-damage-capsule">
+                  {/* Encima de la barra: % de daño aproximado que causará el golpe */}
+                  <div className="photo-damage-title" data-testid="text-photo-damage-pct">
+                    Daño estimado {calc.minPct.toFixed(1)} - {calc.maxPct.toFixed(1)} %
+                  </div>
+
+                  {/* Barra de daño que disminuye con los PS restantes aproximados */}
+                  <div
+                    className="photo-hp-track"
+                    role="progressbar"
+                    aria-valuemin={0}
+                    aria-valuemax={calc.hp}
+                    aria-valuenow={calc.remainingMin}
+                    data-testid="track-photo-hp-bar"
+                  >
+                    {/* Tramo de variación entre daño mínimo y máximo */}
+                    <div
+                      className="photo-hp-variance-fill"
+                      style={{ width: `${calc.remainingMaxPct}%` }}
+                      title={`Rango de PS restantes: ${calc.remainingMin.toFixed(1)} a ${calc.remainingMax.toFixed(1)} PS`}
+                    />
+                    {/* Barra sólida de PS restantes garantizados */}
+                    <div
+                      className={`photo-hp-solid-fill ${
+                        calc.remainingMinPct > 50
+                          ? 'hp-green'
+                          : calc.remainingMinPct > 20
+                          ? 'hp-amber'
+                          : 'hp-red'
+                      }`}
+                      style={{ width: `${calc.remainingMinPct}%` }}
+                      title={`PS restantes mínimos seguros: ${calc.remainingMin.toFixed(1)} PS`}
+                    />
+                  </div>
+
+                  {/* Debajo de la barra: PS restantes y totales en formato exacto: 65.0-70.0/180 Ps */}
+                  <div className="photo-hp-numbers-row" data-testid="text-photo-hp-counter">
+                    <span className="photo-hp-current">{calc.remainingText}</span>
+                    <span className="photo-hp-max">/{calc.hp} Ps</span>
+                  </div>
+
+                  {/* Especificar si es KO y cuántos golpes para KO seguro */}
+                  <div className={`photo-ko-banner ${calc.koCategory}`} data-testid="banner-photo-ko-status">
+                    <span>{calc.koIcon}</span>
+                    <span>{calc.koFullDetail}</span>
+                  </div>
                 </div>
+
                 <div className="result-bottom">
-                  <span>PS rival: {calc.hp}</span>
-                  <span>Mín: {fmt(calc.lo)} PS</span>
-                  <span>Máx: {fmt(calc.hi)} PS</span>
+                  <span>Daño infligido: {fmt(calc.lo)} – {fmt(calc.hi)} PS</span>
+                  <span>PS total rival: {calc.hp}</span>
                 </div>
 
                 {/* Modifiers Chips */}
@@ -1889,26 +2546,50 @@ function App() {
                         : '1,5'
                       : '1'}
                   </span>
-                  <span className="modifier">
-                    {field === 'tailwind'
-                      ? `Viento Afín (${fieldSide === 'both' ? 'Ambos campos' : fieldSide === 'attacker' ? 'Campo atacante' : 'Campo rival'} Vel ×2)`
-                      : field === 'none'
-                      ? 'Sin pantallas'
-                      : calc.screen < 1
-                      ? `${fieldOptions.find(([v]) => v === field)?.[1]} (${fieldSide === 'both' ? 'Ambos campos −50%' : 'Campo rival −50%'})`
-                      : fieldSide === 'attacker'
-                      ? `${fieldOptions.find(([v]) => v === field)?.[1]} (Activo en atacante · No protege rival)`
-                      : `Pantalla: ${fieldOptions.find(([v]) => v === field)?.[1]}`}
-                  </span>
                   {weather !== 'none' && (
                     <span className="modifier">{weatherOptions.find(([v]) => v === weather)?.[1]}</span>
                   )}
-                  {calc.criticalMod > 1 && (
-                    <span className="modifier">Crítico ×{attackerAbility === 'sniper' ? '2,25' : '1,5'}</span>
+                  {speedCalc?.isTrickRoom && (
+                    <span className="modifier">🌀 Espacio Raro activo</span>
                   )}
-                  {calc.burnMod < 1 && <span className="modifier">Quemadura físico ×0,5</span>}
-                  {attackerAbility === 'guts' && burned && move.categoria === 'physical' && (
-                    <span className="modifier">Agallas ×1,5 (ignora quemadura)</span>
+                  {attackerField.tailwind && (
+                    <span className="modifier">🌪️ Viento Afín (Atacante ×2 Vel)</span>
+                  )}
+                  {defenderField.tailwind && (
+                    <span className="modifier">🌪️ Viento Afín (Defensor ×2 Vel)</span>
+                  )}
+                  {defenderField.reflect && move.categoria === 'physical' && (
+                    <span className="modifier">
+                      {critical ? 'Reflejo (ignorado por Crítico)' : 'Reflejo (−50% daño físico)'}
+                    </span>
+                  )}
+                  {defenderField.lightScreen && move.categoria === 'special' && (
+                    <span className="modifier">
+                      {critical ? 'Pantalla Luz (ignorada por Crítico)' : 'Pantalla Luz (−50% daño especial)'}
+                    </span>
+                  )}
+                  {calc.criticalMod > 1 && (
+                    <span className="modifier">💥 Crítico ×{attackerAbility === 'sniper' ? '2,25' : '1,5'}</span>
+                  )}
+                  {attackerBurned && (
+                    <span className="modifier">
+                      🔥 Atacante quemado {move.categoria === 'physical' && attackerAbility !== 'guts' && move.id !== 'facade' ? '(físico ×0,5)' : attackerAbility === 'guts' ? '(Agallas ×1,5)' : ''}
+                    </span>
+                  )}
+                  {attackerPoisoned && (
+                    <span className="modifier">
+                      ☠️ Atacante envenenado {attackerAbility === 'guts' || attackerAbility === 'toxic-boost' ? '(físico ×1,5)' : ''}
+                    </span>
+                  )}
+                  {defenderBurned && (
+                    <span className="modifier">
+                      🔥 Defensor quemado {defenderAbility === 'marvel-scale' ? '(Escama Especial Def +50%)' : ''}
+                    </span>
+                  )}
+                  {defenderPoisoned && (
+                    <span className="modifier">
+                      ☠️ Defensor envenenado {defenderAbility === 'marvel-scale' ? '(Escama Especial Def +50%)' : ''}
+                    </span>
                   )}
                   {attackerAbility === 'technician' && move.poder <= 60 && (
                     <span className="modifier">Experto ×1,5</span>
@@ -1924,96 +2605,82 @@ function App() {
                     <span className="modifier">Objeto defensor: {ITEMS.find(([id]) => id === defender.item)?.[1]}</span>
                   )}
                 </div>
-
-                {postMoveChange && attacker && (
-                  <div className="post-move-effect" data-testid="text-post-move-effect">
-                    <span>
-                      Tras el golpe: {STAT_LABELS[postMoveChange.stat]} {postMoveChange.delta > 0 ? '+' : ''}
-                      {postMoveChange.delta}{' '}
-                      {attackerAbility === 'contrary' || (customAbility?.effect === 'contrary' && customAbilityMatches)
-                        ? '(Respondón)'
-                        : ''}
-                    </span>
-                    <button
-                      type="button"
-                      data-testid="button-apply-post-move-boost"
-                      disabled={postMoveChange.delta === 0}
-                      onClick={() => {
-                        updateBoost(attacker.id, postMoveChange.stat, postMoveChange.delta);
-                        setToast('Cambio de estadística aplicado al siguiente cálculo.');
-                      }}
-                    >
-                      Aplicar al siguiente cálculo
-                    </button>
-                  </div>
-                )}
               </div>
             ) : (
               <div className="empty-state">Añade Pokémon y movimientos para calcular el resultado.</div>
             )}
           </section>
-
-          {/* Stage Boosts Card */}
-          <section className="glass stage-card">
-            <div className="section-head">
-              <span className="section-title">Boosts de combate</span>
-              <Activity size={15} color="#6d9290" />
-            </div>
-            <p className="stage-description">
-              Modifica las etapas (−6 a +6). El ataque, defensa y velocidad afectan directamente al daño y al orden de turno.
-            </p>
-            <div className="stage-columns">
-              {([['Atacante', attacker], ['Defensor', defender]] as const).map(
-                ([role, combatant]) =>
-                  combatant && (
-                    <details
-                      className="stage-panel"
-                      key={`${role}-${combatant.id}`}
-                      data-testid={`panel-boosts-${role.toLowerCase()}`}
-                    >
-                      <summary>
-                        <span>
-                          {role} · {combatant.nombre}
-                        </span>
-                        <ChevronDown size={15} />
-                      </summary>
-                      <div className="stage-rows">
-                        {STAGE_KEYS.map(key => (
-                          <div className="stage-row" key={key}>
-                            <span>{STAT_LABELS[key]}</span>
-                            <div className="stage-stepper">
-                              <button
-                                type="button"
-                                aria-label={`Bajar boost de ${STAT_LABELS[key]} de ${role.toLowerCase()}`}
-                                data-testid={`button-boost-down-${role.toLowerCase()}-${key}`}
-                                disabled={combatant.boosts[key] <= -6}
-                                onClick={() => updateBoost(combatant.id, key, -1)}
-                              >
-                                <Minus size={12} />
-                              </button>
-                              <strong data-testid={`text-boost-${role.toLowerCase()}-${key}`}>
-                                {combatant.boosts[key] > 0 ? `+${combatant.boosts[key]}` : combatant.boosts[key]}
-                              </strong>
-                              <button
-                                type="button"
-                                aria-label={`Subir boost de ${STAT_LABELS[key]} de ${role.toLowerCase()}`}
-                                data-testid={`button-boost-up-${role.toLowerCase()}-${key}`}
-                                disabled={combatant.boosts[key] >= 6}
-                                onClick={() => updateBoost(combatant.id, key, 1)}
-                              >
-                                <Plus size={12} />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </details>
-                  ),
-              )}
-            </div>
-          </section>
         </div>
       </div>
+      </>
+    )}
+
+      {/* Main View: Pokemon Dex */}
+      {currentView === 'dex' && (
+        <PokemonDexView
+          onSelectAttacker={handleSelectAttackerFromDexView}
+          onSelectDefender={handleSelectDefenderFromDexView}
+          onAddToBuilder={handleAddToBuilder}
+          onToast={setToast}
+        />
+      )}
+
+      {/* Main View: Movimientos */}
+      {currentView === 'moves' && (
+        <MovesView
+          moves={moves}
+          onSelectMoveInCalc={handleSelectMoveInCalc}
+          onOpenCreateMoveModal={() => openForm('movimiento')}
+          onOpenEditMoveModal={mv => openForm('movimiento', mv)}
+          onDeleteMove={handleDeleteMove}
+          onToast={setToast}
+        />
+      )}
+
+      {/* Main View: Builder (6-Pokemon PvP 1v1) */}
+      {currentView === 'builder' && (
+        <TeamBuilderView
+          pokemonList={pokemon}
+          equipoOU={ouPokemon}
+          equipoUU={uuPokemon}
+          equipoNU={nuPokemon}
+          onSendToCalculator={handleSendFromBuilderToCalc}
+          onToast={setToast}
+        />
+      )}
+
+      {/* Main View: Configuración (Fondo y Modo Oscuro/Día) */}
+      {currentView === 'settings' && (
+        <SettingsView
+          theme={theme}
+          onToggleTheme={() => setTheme(c => (c === 'dark' ? 'light' : 'dark'))}
+          background={background}
+          onSelectBackground={setBackground}
+          customBackground={customBackground}
+          onUploadCustomBackground={handleBackgroundUpload}
+          onRemoveCustomBackground={() => {
+            setCustomBackground('');
+            if (background === 'custom') setBackground('mint');
+            setToast('Imagen personalizada eliminada.');
+          }}
+          lockCustomBackground={lockCustomBackground}
+          onToggleLockCustomBackground={() => {
+            setLockCustomBackground(v => !v);
+            setToast(
+              !lockCustomBackground
+                ? '📌 Fondo fijado: Tu imagen no se verá afectada por el clima.'
+                : 'Fondo desfijado: El clima volverá a alterar el fondo.'
+            );
+          }}
+          backgrounds={BACKGROUNDS}
+          onToast={setToast}
+        />
+      )}
+
+      {/* Main View: Información (Guía APK & Offline) */}
+      {currentView === 'info' && (
+        <InfoView onToast={setToast} />
+      )}
 
       {/* Navigation Drawer */}
       {drawer && (
@@ -2039,360 +2706,39 @@ function App() {
               </button>
             </div>
 
-            <button className="drawer-link active" data-testid="nav-calculator" onClick={() => setDrawer(false)}>
-              <Gauge size={16} /> Calculadora de daño
-            </button>
-
-            {/* APK Install button in Drawer */}
-            <button
-              type="button"
-              className="drawer-link bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 font-bold"
-              data-testid="drawer-button-apk-install"
-              onClick={() => {
-                setDrawer(false);
-                if (isInstallable) {
-                  install();
-                } else {
-                  setModal('apk-guide');
-                }
-              }}
-            >
-              <Smartphone size={16} /> Instalar como App / APK móvil
-            </button>
-
-            <div className="theme-row">
-              <span>
-                <Palette size={15} />
-                {theme === 'dark' ? 'Modo oscuro' : 'Modo día'}
-              </span>
-              <button
-                type="button"
-                className="theme-toggle"
-                data-testid="button-toggle-theme"
-                aria-label={theme === 'dark' ? 'Cambiar a modo día' : 'Cambiar a modo oscuro'}
-                onClick={() => setTheme(current => (current === 'dark' ? 'light' : 'dark'))}
-              >
-                {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
-                {theme === 'dark' ? 'Modo día' : 'Modo oscuro'}
-              </button>
-            </div>
-
-            {/* Pokémon Dex section organized by Dex General and 3 tiers */}
-            <div className="drawer-section">
-              <button
-                type="button"
-                data-testid="button-toggle-pokemon-section"
-                onClick={() => setOpenSections(s => ({ ...s, pokemon: !s.pokemon }))}
-              >
-                <span>Pokémon Dex</span>
-                {openSections.pokemon ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-              </button>
-              {openSections.pokemon && (
-                <div className="drawer-submenu">
-                  {/* Dex General (#001 a #649 - Gen 1 a 5) */}
-                  <div className="tier-group" data-testid="submenu-tier-dex">
-                    <button
-                      type="button"
-                      className="tier-group-header"
-                      onClick={() => setOpenTiers(t => ({ ...t, dex: !t.dex }))}
-                    >
-                      <span className="flex items-center gap-2">
-                        <span className="tier-chip tier-chip-dex">DEX</span>
-                        <span>Dex general (#001 a #649)</span>
-                      </span>
-                      <span className="flex items-center gap-1.5">
-                        <span className="tier-count">649</span>
-                        {openTiers.dex ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                      </span>
-                    </button>
-                    {openTiers.dex && (
-                      <div className="tier-options">
-                        <button
-                          type="button"
-                          className="drawer-link font-bold text-emerald-800 dark:text-emerald-300"
-                          data-testid="button-open-dex-general"
-                          onClick={() => {
-                            setDrawer(false);
-                            openDexGeneral();
-                          }}
-                        >
-                          <BookOpen size={14} /> Explorar Dex general (#001 — #649)
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Tier OU (Over Used) */}
-                  <div className="tier-group" data-testid="submenu-tier-ou">
-                    <button
-                      type="button"
-                      className="tier-group-header"
-                      onClick={() => setOpenTiers(t => ({ ...t, ou: !t.ou }))}
-                    >
-                      <span className="flex items-center gap-2">
-                        <span className="tier-chip tier-chip-ou">OU</span>
-                        <span>Tier OU (Over Used)</span>
-                      </span>
-                      <span className="flex items-center gap-1.5">
-                        <span className="tier-count">{equipoOU.length}</span>
-                        {openTiers.ou ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                      </span>
-                    </button>
-                    {openTiers.ou && (
-                      <div className="tier-options">
-                        <button
-                          type="button"
-                          className="drawer-link"
-                          data-testid="button-add-pokemon-ou"
-                          onClick={() => {
-                            setDrawer(false);
-                            openAddPokemonForTier('ou');
-                          }}
-                        >
-                          <PlusCircle size={14} /> Añadir Pokémon a Tier OU
-                        </button>
-                        <button
-                          type="button"
-                          className="drawer-link"
-                          data-testid="button-manage-pokemon-ou"
-                          onClick={() => {
-                            setDrawer(false);
-                            openManageTeamForTier('ou');
-                          }}
-                        >
-                          <Activity size={14} /> Gestionar equipo Tier OU ({equipoOU.length})
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Tier UU (Under Used) */}
-                  <div className="tier-group" data-testid="submenu-tier-uu">
-                    <button
-                      type="button"
-                      className="tier-group-header"
-                      onClick={() => setOpenTiers(t => ({ ...t, uu: !t.uu }))}
-                    >
-                      <span className="flex items-center gap-2">
-                        <span className="tier-chip tier-chip-uu">UU</span>
-                        <span>Tier UU (Under Used)</span>
-                      </span>
-                      <span className="flex items-center gap-1.5">
-                        <span className="tier-count">{equipoUU.length}</span>
-                        {openTiers.uu ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                      </span>
-                    </button>
-                    {openTiers.uu && (
-                      <div className="tier-options">
-                        <button
-                          type="button"
-                          className="drawer-link"
-                          data-testid="button-add-pokemon-uu"
-                          onClick={() => {
-                            setDrawer(false);
-                            openAddPokemonForTier('uu');
-                          }}
-                        >
-                          <PlusCircle size={14} /> Añadir Pokémon a Tier UU
-                        </button>
-                        <button
-                          type="button"
-                          className="drawer-link"
-                          data-testid="button-manage-pokemon-uu"
-                          onClick={() => {
-                            setDrawer(false);
-                            openManageTeamForTier('uu');
-                          }}
-                        >
-                          <Activity size={14} /> Gestionar equipo Tier UU ({equipoUU.length})
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Tier NU (Never Used) */}
-                  <div className="tier-group" data-testid="submenu-tier-nu">
-                    <button
-                      type="button"
-                      className="tier-group-header"
-                      onClick={() => setOpenTiers(t => ({ ...t, nu: !t.nu }))}
-                    >
-                      <span className="flex items-center gap-2">
-                        <span className="tier-chip tier-chip-nu">NU</span>
-                        <span>Tier NU (Never Used)</span>
-                      </span>
-                      <span className="flex items-center gap-1.5">
-                        <span className="tier-count">{equipoNU.length}</span>
-                        {openTiers.nu ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                      </span>
-                    </button>
-                    {openTiers.nu && (
-                      <div className="tier-options">
-                        <button
-                          type="button"
-                          className="drawer-link"
-                          data-testid="button-add-pokemon-nu"
-                          onClick={() => {
-                            setDrawer(false);
-                            openAddPokemonForTier('nu');
-                          }}
-                        >
-                          <PlusCircle size={14} /> Añadir Pokémon a Tier NU
-                        </button>
-                        <button
-                          type="button"
-                          className="drawer-link"
-                          data-testid="button-manage-pokemon-nu"
-                          onClick={() => {
-                            setDrawer(false);
-                            openManageTeamForTier('nu');
-                          }}
-                        >
-                          <Activity size={14} /> Gestionar equipo Tier NU ({equipoNU.length})
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Moves section */}
-            <div className="drawer-section">
-              <button
-                data-testid="button-toggle-moves-section"
-                onClick={() => setOpenSections(s => ({ ...s, moves: !s.moves }))}
-              >
-                <span>Movimientos</span>
-                {openSections.moves ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-              </button>
-              {openSections.moves && (
-                <>
+            <div className="drawer-item-list">
+              {DRAWER_ITEMS.map(item => {
+                const isActive = currentView === item.id;
+                const Icon = item.icon;
+                return (
                   <button
-                    className="drawer-link"
-                    data-testid="button-add-move"
+                    key={item.id}
+                    type="button"
+                    className={`drawer-item-btn ${isActive ? "active" : ""}`}
+                    data-testid={`drawer-item-${item.id}`}
                     onClick={() => {
-                      setDrawer(false);
-                      openForm('movimiento');
+                      if (item.id === "salir") {
+                        setDrawer(false);
+                      } else {
+                        setCurrentView(item.id);
+                        setDrawer(false);
+                      }
                     }}
                   >
-                    <PlusCircle size={15} /> Añadir movimiento
+                    <span className="drawer-item-icon">
+                      <Icon size={18} />
+                    </span>
+                    <span className="drawer-item-label">{item.label}</span>
                   </button>
-                  <button
-                    className="drawer-link"
-                    data-testid="button-manage-moves"
-                    onClick={() => {
-                      setDrawer(false);
-                      openForm('movimiento');
-                    }}
-                  >
-                    <Swords size={15} /> Gestionar movimientos ({moves.length})
-                  </button>
-                </>
-              )}
+                );
+              })}
             </div>
 
-            {/* Background customizer */}
-            <div className="drawer-section">
-              <button
-                data-testid="button-toggle-background-section"
-                onClick={() => setOpenSections(s => ({ ...s, backgrounds: !s.backgrounds }))}
-              >
-                <span>
-                  <Palette size={15} /> Personalización de fondo
-                </span>
-                {openSections.backgrounds ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-              </button>
-              {openSections.backgrounds && (
-                <div className="background-settings">
-                  <p>Elige un fondo o sube el tuyo personalizado. Cuando seleccionas un clima activo (Sol, Lluvia, etc.), el fondo se adapta automáticamente al clima animado.</p>
-                  <div className="background-options">
-                    {BACKGROUNDS.map(option => (
-                      <button
-                        type="button"
-                        className={`background-option ${background === option.id ? 'selected' : ''}`}
-                        key={option.id}
-                        data-testid={`button-background-${option.id}`}
-                        aria-pressed={background === option.id}
-                        onClick={() => setBackground(option.id)}
-                      >
-                        <span className="background-preview" style={{ backgroundImage: option.image }} />
-                        <span>{option.name}</span>
-                        {background === option.id && <span className="background-check">✓</span>}
-                      </button>
-                    ))}
-                    {customBackground && (
-                      <button
-                        type="button"
-                        className={`background-option ${background === 'custom' ? 'selected' : ''}`}
-                        data-testid="button-background-custom"
-                        aria-pressed={background === 'custom'}
-                        onClick={() => setBackground('custom')}
-                      >
-                        <span className="background-preview" style={{ backgroundImage: `url("${customBackground}")` }} />
-                        <span>Mi imagen</span>
-                        {background === 'custom' && <span className="background-check">✓</span>}
-                      </button>
-                    )}
-                  </div>
-                  <label className="background-upload">
-                    <ImagePlus size={16} />
-                    <span>Subir una imagen</span>
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp"
-                      data-testid="input-background-upload"
-                      onChange={handleBackgroundUpload}
-                    />
-                  </label>
-                  {customBackground && (
-                    <div className="flex flex-col gap-2 mt-2">
-                      <button
-                        type="button"
-                        className={`btn ${lockCustomBackground ? 'btn-primary' : 'btn-muted'} !py-2 !px-3 text-xs flex items-center justify-between gap-2`}
-                        data-testid="button-toggle-pin-background"
-                        onClick={() => {
-                          setLockCustomBackground(prev => !prev);
-                          setToast(
-                            !lockCustomBackground
-                              ? '📌 Fondo fijado: Tu imagen no se verá afectada por el clima.'
-                              : 'Fondo desfijado: El clima volverá a alterar el fondo.',
-                          );
-                        }}
-                        title="Fijar tu imagen para que no sea alterada por los climas"
-                      >
-                        <span className="flex items-center gap-1.5 font-bold">
-                          {lockCustomBackground ? <PinOff size={13} /> : <Pin size={13} />}
-                          {lockCustomBackground ? 'Fondo fijado (Inmune al clima)' : 'Fijar fondo (Ignorar clima)'}
-                        </span>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold ${lockCustomBackground ? 'bg-emerald-950/40 text-emerald-100' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
-                          {lockCustomBackground ? 'FIJADO' : 'LIBRE'}
-                        </span>
-                      </button>
-
-                      <button
-                        className="remove-background"
-                        type="button"
-                        data-testid="button-remove-background"
-                        onClick={() => {
-                          setCustomBackground('');
-                          if (background === 'custom') setBackground('mint');
-                          setToast('Imagen personalizada eliminada.');
-                        }}
-                      >
-                        Eliminar mi imagen
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="drawer-note">
+            <div className="drawer-note mt-6">
               <strong>
-                <CircleHelp size={12} style={{ verticalAlign: '-2px', marginRight: 5 }} /> Sobre la App y APK
+                <CircleHelp size={12} style={{ verticalAlign: "-2px", marginRight: 5 }} /> PokéMMO 100% Offline
               </strong>
-              100% Offline: todos tus Pokémon, movimientos y configuraciones se guardan en el almacenamiento local del dispositivo. Listo para instalar como APK.
+              Todos tus Pokémon, movimientos y equipos se guardan localmente en tu dispositivo. Listo para usar sin conexión.
             </div>
           </nav>
         </div>

@@ -46,6 +46,24 @@ export function getPokemonSpriteUrl(num: number): string {
   return '';
 }
 
+// 100% Offline Pokémon Showdown icon sprite generator from local /pokemonicons-sheet.png
+export function getPokemonShowdownSpriteStyle(dexNum: number): React.CSSProperties {
+  if (dexNum <= 0 || dexNum > 649) return {};
+  const left = (dexNum % 12) * 40;
+  const top = Math.floor(dexNum / 12) * 30;
+  const baseUrl = import.meta.env.BASE_URL || '/';
+  const sheetUrl = baseUrl.endsWith('/') ? `${baseUrl}pokemonicons-sheet.png` : `${baseUrl}/pokemonicons-sheet.png`;
+  return {
+    display: 'inline-block',
+    width: '40px',
+    height: '30px',
+    backgroundImage: `url("${sheetUrl}")`,
+    backgroundRepeat: 'no-repeat',
+    backgroundPosition: `-${left}px -${top}px`,
+    imageRendering: 'pixelated',
+  };
+}
+
 // Highlight matched characters in search query
 function highlightMatch(name: string, query: string) {
   const cleanQ = query.trim().toLowerCase();
@@ -264,7 +282,16 @@ export const PokemonSearchableSelect: React.FC<PokemonSearchableSelectProps> = (
     <div className={`pokemon-search-field-wrapper ${className}`} ref={containerRef}>
       {/* ONLY THE CLEAN TEXT INPUT FIELD (No top bar, no quick action buttons, no filter) */}
       <div className="pokemon-search-input-box">
-        <Search size={16} className="pokemon-search-icon-left" />
+        {selectedPokemon && !isOpen && getPokemonDexNum(selectedPokemon) > 0 ? (
+          <span
+            className="pokemon-search-icon-showdown flex-shrink-0"
+            style={getPokemonShowdownSpriteStyle(getPokemonDexNum(selectedPokemon))}
+            role="img"
+            aria-hidden="true"
+          />
+        ) : (
+          <Search size={16} className="pokemon-search-icon-left" />
+        )}
 
         <input
           id={inputId}
@@ -334,14 +361,14 @@ export const PokemonSearchableSelect: React.FC<PokemonSearchableSelectProps> = (
                   }}
                   onMouseEnter={() => setHighlightedIndex(idx)}
                 >
-                  {/* Left: Classic Pokémon Sprite */}
+                  {/* Left: Offline Pokémon Showdown Sprite Sheet Icon */}
                   <div className="pokemon-dropdown-sprite-wrap">
                     {dexNum > 0 ? (
-                      <img
-                        src={getPokemonSpriteUrl(dexNum)}
-                        alt={pk.nombre}
-                        className="pokemon-dropdown-sprite"
-                        loading="lazy"
+                      <span
+                        className="pokemon-dropdown-icon"
+                        style={getPokemonShowdownSpriteStyle(dexNum)}
+                        role="img"
+                        aria-label={pk.nombre}
                       />
                     ) : (
                       <div className="pokemon-dropdown-sprite-blank" />

@@ -22,6 +22,7 @@ import {
   TypeBadge,
   TYPES,
 } from '../pokemon-constants';
+import { getPokemonShowdownSpriteStyle } from './PokemonSearchableSelect';
 
 interface DexGeneralModalProps {
   isOpen: boolean;
@@ -323,19 +324,11 @@ export const DexGeneralModal: React.FC<DexGeneralModalProps> = ({
                   {/* Sprite & Identity */}
                   <div className="dex-card-identity">
                     <div className="dex-card-sprite-wrap">
-                      <img
-                        src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${rawPk.num}.png`}
-                        alt={rawPk.nombre}
-                        className="dex-card-sprite"
-                        loading="lazy"
-                        onError={e => {
-                          // Fallback to showdown gen 5 sprite
-                          const target = e.currentTarget;
-                          if (!target.dataset.fallback) {
-                            target.dataset.fallback = 'true';
-                            target.src = `https://play.pokemonshowdown.com/sprites/gen5/${rawPk.id}.png`;
-                          }
-                        }}
+                      <span
+                        style={getPokemonShowdownSpriteStyle(rawPk.num)}
+                        className="image-pixelated inline-block"
+                        role="img"
+                        aria-label={rawPk.nombre}
                       />
                     </div>
                     <div className="dex-card-info">
