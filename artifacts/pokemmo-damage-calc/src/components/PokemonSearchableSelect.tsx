@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Check, Search, X } from 'lucide-react';
-import { rawDexList } from '../dex';
+import { allGen1To5Pokemon, rawDexList } from '../dex';
 import { type Pokemon } from '../pokemon-constants';
 
 interface PokemonSearchableSelectProps {
@@ -27,19 +27,59 @@ function normalizeText(str: string): string {
     .trim();
 }
 
-// Find Pokédex number to retrieve official sprite
-export function getPokemonDexNum(pokemon?: Pokemon | null): number {
-  if (!pokemon) return 0;
-  if (pokemon.num && pokemon.num > 0) return pokemon.num;
-  const match = rawDexList.find(
-    d =>
-      (pokemon.id && d.id.toLowerCase() === pokemon.id.toLowerCase()) ||
-      (pokemon.nombre && d.nombre.toLowerCase() === pokemon.nombre.toLowerCase())
-  );
-  return match?.num || 0;
+// Find Pokédex number from number, pokemon object, or pokemonId string with robust resolution
+export function getPokemonDexNum(target?: unknown, fallbackNum?: number): number {
+  if (fallbackNum && typeof fallbackNum === 'number' && fallbackNum > 0 && fallbackNum <= 649) {
+    return fallbackNum;
+  }
+  if (target === null || target === undefined) return 0;
+  if (typeof target === 'number' && target > 0 && target <= 649) return target;
+
+  if (typeof target === 'object') {
+    const obj = target as Record<string, unknown>;
+    if (typeof obj.num === 'number' && obj.num > 0 && obj.num <= 649) return obj.num;
+    if (typeof obj.dexNum === 'number' && obj.dexNum > 0 && obj.dexNum <= 649) return obj.dexNum;
+    if (typeof obj.pokemonId === 'string' && obj.pokemonId) {
+      const n = getPokemonDexNum(obj.pokemonId);
+      if (n > 0) return n;
+    }
+    if (typeof obj.nombre === 'string' && obj.nombre) {
+      const n = getPokemonDexNum(obj.nombre);
+      if (n > 0) return n;
+    }
+    if (typeof obj.id === 'string' && obj.id) {
+      const n = getPokemonDexNum(obj.id);
+      if (n > 0) return n;
+    }
+  }
+
+  if (typeof target === 'string') {
+    const clean = target.trim().toLowerCase();
+    const parsed = parseInt(clean, 10);
+    if (!isNaN(parsed) && parsed > 0 && parsed <= 649) return parsed;
+
+    // Check if target has a suffix like "garchomp-1234abc" or "pk-garchomp"
+    const bareSlug = clean.replace(/^pk-/, '').split('-')[0].replace(/[^a-z0-9]/g, '');
+
+    const match = rawDexList.find(d => {
+      const dClean = d.id.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const dNom = d.nombre.toLowerCase().replace(/[^a-z0-9]/g, '');
+      return (
+        d.id.toLowerCase() === clean ||
+        d.nombre.toLowerCase() === clean ||
+        dClean === bareSlug ||
+        dNom === bareSlug ||
+        dClean === clean.replace(/[^a-z0-9]/g, '') ||
+        dNom === clean.replace(/[^a-z0-9]/g, '')
+      );
+    });
+    if (match) return match.num;
+  }
+  return 0;
 }
 
-export function getPokemonSpriteUrl(num: number): string {
+export function getPokemonSpriteUrl(target?: unknown, fallbackNum?: number): string {
+  const num = getPokemonDexNum(target, fallbackNum);
   if (num > 0 && num <= 649) {
     return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${num}.png`;
   }
@@ -47,7 +87,8 @@ export function getPokemonSpriteUrl(num: number): string {
 }
 
 // 100% Offline Pokémon Showdown icon sprite generator from local /pokemonicons-sheet.png
-export function getPokemonShowdownSpriteStyle(dexNum: number): React.CSSProperties {
+export function getPokemonShowdownSpriteStyle(target?: unknown, fallbackNum?: number): React.CSSProperties {
+  const dexNum = getPokemonDexNum(target, fallbackNum);
   if (dexNum <= 0 || dexNum > 649) return {};
   const left = (dexNum % 12) * 40;
   const top = Math.floor(dexNum / 12) * 30;
@@ -63,6 +104,55 @@ export function getPokemonShowdownSpriteStyle(dexNum: number): React.CSSProperti
     imageRendering: 'pixelated',
   };
 }
+
+// Reusable crisp Pokemon Sprite with automatic fallback
+export const PokemonSprite: React.FC<{
+  target?: unknown;
+  fallbackNum?: number;
+  name?: string;
+  className?: string;
+  size?: 'xs' | 'sm' | 'md' | 'lg';
+}> = ({ target, name = 'Pokemon', className = '', size = 'md' }) => {
+  const dexNum = getPokemonDexNum(target);
+  const sizeClasses =
+    size === 'xs'
+      ? 'w-5 h-5'
+      : size === 'sm'
+      ? 'w-7 h-7'
+      : size === 'lg'
+      ? 'w-14 h-14'
+      : 'w-10 h-10';
+
+  if (!dexNum) {
+    return (
+      <div className={`${sizeClasses} flex items-center justify-center text-slate-600 text-xs ${className}`}>
+        —
+      </div>
+    );
+  }
+
+  const spriteUrl = getPokemonSpriteUrl(dexNum);
+
+  return (
+    <img
+      src={spriteUrl}
+      alt={name}
+      className={`${sizeClasses} object-contain drop-shadow-sm flex-shrink-0 ${className}`}
+      loading="lazy"
+      onError={e => {
+        const targetEl = e.currentTarget;
+        targetEl.style.display = 'none';
+        const parent = targetEl.parentElement;
+        if (parent && !parent.querySelector('.sheet-fallback')) {
+          const fallback = document.createElement('div');
+          fallback.className = 'sheet-fallback';
+          Object.assign(fallback.style, getPokemonShowdownSpriteStyle(dexNum));
+          parent.appendChild(fallback);
+        }
+      }}
+    />
+  );
+};
 
 // Highlight matched characters in search query
 function highlightMatch(name: string, query: string) {
@@ -137,13 +227,18 @@ export const PokemonSearchableSelect: React.FC<PokemonSearchableSelectProps> = (
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [selectedPokemon]);
 
-  // Combined master list of all Pokémon (teams first, then Dex)
+  // Combined master list of all Pokémon (teams first, custom, then all Gen 1-5 Dex)
   const masterList = useMemo(() => {
     const map = new Map<string, Pokemon>();
     for (const p of pokemonList) map.set(p.id, p);
     for (const p of equipoOU) map.set(p.id, p);
     for (const p of equipoUU) map.set(p.id, p);
     for (const p of equipoNU) map.set(p.id, p);
+    for (const p of allGen1To5Pokemon) {
+      if (!map.has(p.id)) {
+        map.set(p.id, p);
+      }
+    }
     return Array.from(map.values());
   }, [pokemonList, equipoOU, equipoUU, equipoNU]);
 

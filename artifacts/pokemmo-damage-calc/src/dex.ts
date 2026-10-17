@@ -1,5 +1,6 @@
 import rawDexData from './pokedex-gen1-5.json';
-import { type Pokemon, type PokemonTier, type StageValues, type StatValues } from './pokemon-constants';
+import rawMovesData from './moves-gen1-5.json';
+import { type Move, type Pokemon, type PokemonTier, type StageValues, type StatValues } from './pokemon-constants';
 
 export interface RawDexPokemon {
   id: string;
@@ -74,3 +75,10 @@ export const allGen1To5Pokemon: Pokemon[] = rawDexList.map(p => convertDexToPoke
 export const dexPokemonMap = new Map<string, Pokemon>(
   allGen1To5Pokemon.map(p => [p.id, p])
 );
+
+export const allGen1To5Moves: Move[] = (rawMovesData as Move[]);
+
+export const dexMoveMap = new Map<string, Move>(
+  allGen1To5Moves.map(m => [m.id, m])
+);
+

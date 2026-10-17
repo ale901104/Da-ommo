@@ -57,7 +57,7 @@ import {
 } from './pokemon-constants';
 import { usePWAInstall } from './hooks/use-pwa-install';
 import { WeatherBackground } from './components/weather-background';
-import { allGen1To5Pokemon, convertDexToPokemon } from './dex';
+import { allGen1To5Pokemon, convertDexToPokemon, allGen1To5Moves } from './dex';
 import { DexGeneralModal } from './components/DexGeneralModal';
 import { PokemonSearchableSelect, getPokemonDexNum, getPokemonShowdownSpriteStyle } from './components/PokemonSearchableSelect';
 import { TeamBuilderView } from './components/TeamBuilderView';
@@ -149,13 +149,24 @@ function normalizeMove(value: unknown): Move {
   const row = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
   const statChangeRow = row.statChange && typeof row.statChange === 'object' ? (row.statChange as Record<string, unknown>) : null;
   const stage = statChangeRow && STAGE_KEYS.includes(statChangeRow.stat as StageKey) ? safeInteger(statChangeRow.stages, 0, -6, 6) : 0;
+  const cat = row.categoria === 'special' ? 'special' : row.categoria === 'status' ? 'status' : 'physical';
   return {
     id: typeof row.id === 'string' ? row.id : `mv-${Date.now()}`,
-    nombre: typeof row.nombre === 'string' ? row.nombre.slice(0, 28) : 'Movimiento',
+    num: typeof row.num === 'number' ? row.num : undefined,
+    nombre: typeof row.nombre === 'string' ? row.nombre.slice(0, 36) : 'Movimiento',
+    showdownKey: typeof row.showdownKey === 'string' ? row.showdownKey : undefined,
     tipo: typeof row.tipo === 'string' && TYPES.some(([id]) => id === row.tipo) ? row.tipo : 'normal',
-    categoria: row.categoria === 'special' ? 'special' : 'physical',
-    poder: safeInteger(row.poder, 80, 1, 250),
+    categoria: cat,
+    poder: cat === 'status' ? 0 : safeInteger(row.poder, 0, 0, 250),
+    pp: typeof row.pp === 'number' ? safeInteger(row.pp, 20, 1, 64) : 20,
+    accuracy: typeof row.accuracy === 'number' ? safeInteger(row.accuracy, 100, 1, 100) : null,
     priority: typeof row.priority === 'number' ? safeInteger(row.priority, 0, -6, 5) : 0,
+    probEfecto: typeof row.probEfecto === 'number' ? safeInteger(row.probEfecto, 0, 0, 100) : null,
+    target: typeof row.target === 'string' ? row.target : 'selected-pokemon',
+    targetLabel: typeof row.targetLabel === 'string' ? row.targetLabel : 'Un Pokémon adyacente o seleccionado',
+    descripcion: typeof row.descripcion === 'string' ? row.descripcion : '',
+    learnersCount: typeof row.learnersCount === 'number' ? row.learnersCount : Array.isArray(row.learners) ? row.learners.length : 0,
+    learners: Array.isArray(row.learners) ? (row.learners as string[]) : undefined,
     ...(statChangeRow && stage !== 0 ? { statChange: { stat: statChangeRow.stat as StageKey, stages: stage } } : {}),
   };
 }
@@ -220,7 +231,7 @@ function normalizePokemon(value: unknown): Pokemon {
 function loadSaved() {
   const initialPkList = (pokemonIniciales as unknown[]).map(normalizePokemon);
   const initialPkMap = new Map(initialPkList.map(p => [p.id, p]));
-  const initialMvList = (movimientosIniciales as unknown[]).map(normalizeMove);
+  const initialMvList = (allGen1To5Moves as unknown[]).map(normalizeMove);
   const initialMvMap = new Map(initialMvList.map(m => [m.id, m]));
 
   let equipoOU: Pokemon[] = [];
@@ -300,12 +311,8 @@ function loadSaved() {
       const parsed = JSON.parse(stored) as Record<string, unknown>;
       if (Array.isArray(parsed.movimientos)) {
         const savedMv = parsed.movimientos.map(normalizeMove);
-        const combinedMv = [...savedMv];
-        const seenMv = new Set(savedMv.map(m => m.id));
-        for (const [id, mv] of initialMvMap.entries()) {
-          if (!seenMv.has(id)) combinedMv.push(mv);
-        }
-        movimientos = combinedMv;
+        const customOnly = savedMv.filter(m => !initialMvMap.has(m.id));
+        movimientos = [...initialMvList, ...customOnly];
       }
       if (Array.isArray(parsed.habilidades)) {
         habilidades = parsed.habilidades as CustomAbility[];
@@ -629,9 +636,19 @@ function App() {
   };
 
   const handleSendFromBuilderToCalc = (pk: Pokemon, role: 'attacker' | 'defender', moveName?: string) => {
+    setPokemon(prev => {
+      const idx = prev.findIndex(p => p.id === pk.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = { ...prev[idx], ...pk };
+        return next;
+      }
+      return [pk, ...prev];
+    });
+
     if (role === 'attacker') {
       setAttackerId(pk.id);
-      setAttackerAbility(pk.habilidad || 'none');
+      setAttackerAbility(pk.ability || 'none');
       setAttackerLevel(50);
       if (moveName) {
         const matchMove = moves.find(
@@ -644,7 +661,7 @@ function App() {
       setToast(`⚡ ${pk.nombre} cargado como Atacante desde el Builder.`);
     } else {
       setDefenderId(pk.id);
-      setDefenderAbility(pk.habilidad || 'none');
+      setDefenderAbility(pk.ability || 'none');
       setDefenderLevel(50);
       setToast(`🛡️ ${pk.nombre} cargado como Defensor desde el Builder.`);
     }
@@ -1429,8 +1446,8 @@ function App() {
     const data = new FormData(event.currentTarget);
     const name = String(data.get('nombre') ?? '').trim();
     if (!name) return;
-    const ivs = Object.fromEntries(STAT_KEYS.map(key => [key, Number(data.get(`iv-${key}`))])) as StatValues;
-    const evs = Object.fromEntries(STAT_KEYS.map(key => [key, Number(data.get(`ev-${key}`))])) as StatValues;
+    const ivs = Object.fromEntries(STAT_KEYS.map(key => [key, Number(data.get(`iv-${key}`) || 0)])) as StatValues;
+    const evs = Object.fromEntries(STAT_KEYS.map(key => [key, Number(data.get(`ev-${key}`) || 0)])) as StatValues;
     const baseStats = Object.fromEntries(STAT_KEYS.map(key => [key, Number(data.get(key))])) as StatValues;
 
     const editingPk = editing as Pokemon | null;
@@ -2634,6 +2651,20 @@ function App() {
           onOpenEditMoveModal={mv => openForm('movimiento', mv)}
           onDeleteMove={handleDeleteMove}
           onToast={setToast}
+          onSelectPokemonAndMoveInCalc={(pk, mId) => {
+            setPokemon(prev => {
+              const idx = prev.findIndex(p => p.id === pk.id);
+              if (idx >= 0) {
+                const next = [...prev];
+                next[idx] = { ...prev[idx], ...pk };
+                return next;
+              }
+              return [pk, ...prev];
+            });
+            handleAttackerChange(pk.id);
+            setMoveId(mId);
+            setCurrentView('calc');
+          }}
         />
       )}
 
@@ -2644,6 +2675,7 @@ function App() {
           equipoOU={ouPokemon}
           equipoUU={uuPokemon}
           equipoNU={nuPokemon}
+          allMoves={moves}
           onSendToCalculator={handleSendFromBuilderToCalc}
           onToast={setToast}
         />
@@ -2867,8 +2899,9 @@ function App() {
                               min={0}
                               max={31}
                               className="ivev-input"
-                              value={attacker.ivs[key]}
-                              onChange={e => updateIV(attacker.id, key, Number(e.target.value))}
+                              value={attacker.ivs[key] === 0 ? '' : attacker.ivs[key]}
+                              placeholder="0"
+                              onChange={e => updateIV(attacker.id, key, e.target.value === '' ? 0 : Number(e.target.value))}
                             />
                           </td>
                           <td>
@@ -2877,8 +2910,9 @@ function App() {
                               min={0}
                               max={252}
                               className="ivev-input"
-                              value={attacker.evs[key]}
-                              onChange={e => updateEV(attacker.id, key, Number(e.target.value))}
+                              value={attacker.evs[key] === 0 ? '' : attacker.evs[key]}
+                              placeholder="0"
+                              onChange={e => updateEV(attacker.id, key, e.target.value === '' ? 0 : Number(e.target.value))}
                             />
                           </td>
                           <td className="ivev-total-stat">{calculated}</td>
@@ -2983,8 +3017,9 @@ function App() {
                               min={0}
                               max={31}
                               className="ivev-input"
-                              value={defender.ivs[key]}
-                              onChange={e => updateIV(defender.id, key, Number(e.target.value))}
+                              value={defender.ivs[key] === 0 ? '' : defender.ivs[key]}
+                              placeholder="0"
+                              onChange={e => updateIV(defender.id, key, e.target.value === '' ? 0 : Number(e.target.value))}
                             />
                           </td>
                           <td>
@@ -2993,8 +3028,9 @@ function App() {
                               min={0}
                               max={252}
                               className="ivev-input"
-                              value={defender.evs[key]}
-                              onChange={e => updateEV(defender.id, key, Number(e.target.value))}
+                              value={defender.evs[key] === 0 ? '' : defender.evs[key]}
+                              placeholder="0"
+                              onChange={e => updateEV(defender.id, key, e.target.value === '' ? 0 : Number(e.target.value))}
                             />
                           </td>
                           <td className="ivev-total-stat">{calculated}</td>
@@ -3228,44 +3264,56 @@ function App() {
                   <div className="form-subsection">
                     <div className="form-subhead">IVs · de 0 a 31</div>
                     <div className="form-grid">
-                      {STAT_KEYS.map(key => (
-                        <div className="form-field" key={key}>
-                          <label htmlFor={`iv-${key}`}>{STAT_LABELS[key]}</label>
-                          <input
-                            id={`iv-${key}`}
-                            name={`iv-${key}`}
-                            data-testid={`input-iv-${key}`}
-                            type="number"
-                            min="0"
-                            max="31"
-                            step="1"
-                            required
-                            defaultValue={editingPokemon?.ivs[key] ?? 31}
-                          />
-                        </div>
-                      ))}
+                      {STAT_KEYS.map(key => {
+                        const curIv = editingPokemon?.ivs[key] ?? 31;
+                        return (
+                          <div className="form-field" key={key}>
+                            <label htmlFor={`iv-${key}`}>{STAT_LABELS[key]}</label>
+                            <input
+                              id={`iv-${key}`}
+                              name={`iv-${key}`}
+                              data-testid={`input-iv-${key}`}
+                              type="number"
+                              min="0"
+                              max="31"
+                              step="1"
+                              placeholder="0"
+                              defaultValue={curIv === 0 ? '' : curIv}
+                              onFocus={e => {
+                                if (e.target.value === '0') e.target.value = '';
+                              }}
+                            />
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
 
                   <div className="form-subsection">
                     <div className="form-subhead">EVs · 0–252 por estadística; 510 en total</div>
                     <div className="form-grid">
-                      {STAT_KEYS.map(key => (
-                        <div className="form-field" key={key}>
-                          <label htmlFor={`ev-${key}`}>{STAT_LABELS[key]}</label>
-                          <input
-                            id={`ev-${key}`}
-                            name={`ev-${key}`}
-                            data-testid={`input-ev-${key}`}
-                            type="number"
-                            min="0"
-                            max="252"
-                            step="1"
-                            required
-                            defaultValue={editingPokemon?.evs[key] ?? 0}
-                          />
-                        </div>
-                      ))}
+                      {STAT_KEYS.map(key => {
+                        const curEv = editingPokemon?.evs[key] ?? 0;
+                        return (
+                          <div className="form-field" key={key}>
+                            <label htmlFor={`ev-${key}`}>{STAT_LABELS[key]}</label>
+                            <input
+                              id={`ev-${key}`}
+                              name={`ev-${key}`}
+                              data-testid={`input-ev-${key}`}
+                              type="number"
+                              min="0"
+                              max="252"
+                              step="1"
+                              placeholder="0"
+                              defaultValue={curEv === 0 ? '' : curEv}
+                              onFocus={e => {
+                                if (e.target.value === '0') e.target.value = '';
+                              }}
+                            />
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
 

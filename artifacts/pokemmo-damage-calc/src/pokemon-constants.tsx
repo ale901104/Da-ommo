@@ -37,13 +37,25 @@ export type Pokemon = {
   color?: string;
 };
 
+export type MoveCategory = 'physical' | 'special' | 'status';
+
 export type Move = {
   id: string;
+  num?: number;
   nombre: string;
+  showdownKey?: string;
   tipo: string;
-  categoria: 'physical' | 'special';
+  categoria: MoveCategory;
   poder: number;
+  pp?: number;
+  accuracy?: number | null;
   priority?: number;
+  probEfecto?: number | null;
+  target?: string;
+  targetLabel?: string;
+  descripcion?: string;
+  learnersCount?: number;
+  learners?: string[];
   statChange?: { stat: StageKey; stages: number };
 };
 
@@ -366,7 +378,11 @@ export function getPokemonMoves(pokemon?: Pokemon | null, allMoves: Move[] = [])
   if (!pokemon || !pokemon.learnset || pokemon.learnset.length === 0) {
     return allMoves;
   }
-  const set = new Set(pokemon.learnset);
-  const filtered = allMoves.filter(m => set.has(m.id));
+  const set = new Set(pokemon.learnset.map(s => s.toLowerCase().replace(/[^a-z0-9]/g, '')));
+  const filtered = allMoves.filter(m => {
+    const slugKey = m.id.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const showdownKey = (m.showdownKey || '').toLowerCase();
+    return set.has(slugKey) || (showdownKey && set.has(showdownKey));
+  });
   return filtered.length > 0 ? filtered : allMoves;
 }
