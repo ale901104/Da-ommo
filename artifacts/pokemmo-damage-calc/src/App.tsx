@@ -59,7 +59,7 @@ import { usePWAInstall } from './hooks/use-pwa-install';
 import { WeatherBackground } from './components/weather-background';
 import { allGen1To5Pokemon, convertDexToPokemon, allGen1To5Moves } from './dex';
 import { DexGeneralModal } from './components/DexGeneralModal';
-import { PokemonSearchableSelect, getPokemonDexNum, getPokemonShowdownSpriteStyle } from './components/PokemonSearchableSelect';
+import { PokemonSearchableSelect } from './components/PokemonSearchableSelect';
 import { TeamBuilderView } from './components/TeamBuilderView';
 import { PokemonDexView } from './components/PokemonDexView';
 import { MovesView } from './components/MovesView';
@@ -504,6 +504,11 @@ function App() {
       const custom = dexCustomizations[p.id];
       map.set(p.id, custom ? { ...p, ...custom } : p);
     }
+    for (const [id, custom] of Object.entries(dexCustomizations)) {
+      if (custom && !map.has(id)) {
+        map.set(id, custom as Pokemon);
+      }
+    }
     return Array.from(map.values());
   }, [equipoOU, equipoUU, equipoNU, dexCustomizations]);
 
@@ -636,33 +641,39 @@ function App() {
   };
 
   const handleSendFromBuilderToCalc = (pk: Pokemon, role: 'attacker' | 'defender', moveName?: string) => {
-    setPokemon(prev => {
-      const idx = prev.findIndex(p => p.id === pk.id);
-      if (idx >= 0) {
-        const next = [...prev];
-        next[idx] = { ...prev[idx], ...pk };
-        return next;
-      }
-      return [pk, ...prev];
-    });
+    setDexCustomizations(prev => ({
+      ...prev,
+      [pk.id]: pk,
+    }));
+
+    const resolvedAbility = pk.ability || pk.habilidad || 'none';
 
     if (role === 'attacker') {
       setAttackerId(pk.id);
-      setAttackerAbility(pk.ability || 'none');
-      setAttackerLevel(50);
+      setAttackerAbility(resolvedAbility);
+      setAttackerLevel(pk.level || 50);
       if (moveName) {
-        const matchMove = moves.find(
-          m =>
-            m.nombre.toLowerCase() === moveName.toLowerCase() ||
-            m.id.toLowerCase() === moveName.toLowerCase()
-        );
-        if (matchMove) setMoveId(matchMove.id);
+        const matchMove =
+          moves.find(
+            m =>
+              m.nombre.toLowerCase() === moveName.toLowerCase() ||
+              m.id.toLowerCase() === moveName.toLowerCase()
+          ) ||
+          allGen1To5Moves.find(
+            m =>
+              m.nombre.toLowerCase() === moveName.toLowerCase() ||
+              m.id.toLowerCase() === moveName.toLowerCase()
+          );
+        if (matchMove) {
+          setMoves(prev => (prev.some(m => m.id === matchMove.id) ? prev : [matchMove, ...prev]));
+          setMoveId(matchMove.id);
+        }
       }
       setToast(`⚡ ${pk.nombre} cargado como Atacante desde el Builder.`);
     } else {
       setDefenderId(pk.id);
-      setDefenderAbility(pk.ability || 'none');
-      setDefenderLevel(50);
+      setDefenderAbility(resolvedAbility);
+      setDefenderLevel(pk.level || 50);
       setToast(`🛡️ ${pk.nombre} cargado como Defensor desde el Builder.`);
     }
     setCurrentView('calc');
@@ -1618,24 +1629,6 @@ function App() {
             </button>
           )}
 
-          {/* APK / PWA install button */}
-          <button
-            type="button"
-            className="pwa-top-btn"
-            title="Instalar como APK / App en tu móvil"
-            data-testid="button-install-apk-top"
-            onClick={() => {
-              if (isInstallable) {
-                install();
-              } else {
-                setModal('apk-guide');
-              }
-            }}
-          >
-            <Smartphone size={13} />
-            <span>{isInstalled ? 'APK Lista' : 'Instalar APK'}</span>
-          </button>
-
           <button
             className="icon-button"
             aria-label="Restablecer escenario"
@@ -1667,12 +1660,8 @@ function App() {
         <>
           <section className="hero">
             <div className="flex items-center justify-between">
-          <div className="eyebrow">PokéMMO Battle Kit · v2.1</div>
-          <div className="offline-chip">
-            <span className="offline-pulse" />
-            <span>100% Offline · APK Ready</span>
-          </div>
-        </div>
+              <div className="eyebrow">PokéMMO Battle Kit · v2.1</div>
+            </div>
         <h1>
           Calcula tu
           <br />
@@ -1698,7 +1687,9 @@ function App() {
               {attacker && (
                 <div className="combatant-col">
                   <div className="combatant-col-head">
-                    <span className="combatant-role-badge">Atacante</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="combatant-role-badge">Atacante</span>
+                    </div>
                     <div className="combatant-level-stepper">
                       <button
                         type="button"
@@ -1913,7 +1904,9 @@ function App() {
               {defender && (
                 <div className="combatant-col def">
                   <div className="combatant-col-head">
-                    <span className="combatant-role-badge def">Defensor</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="combatant-role-badge def">Defensor</span>
+                    </div>
                     <div className="combatant-level-stepper">
                       <button
                         type="button"
@@ -2652,15 +2645,10 @@ function App() {
           onDeleteMove={handleDeleteMove}
           onToast={setToast}
           onSelectPokemonAndMoveInCalc={(pk, mId) => {
-            setPokemon(prev => {
-              const idx = prev.findIndex(p => p.id === pk.id);
-              if (idx >= 0) {
-                const next = [...prev];
-                next[idx] = { ...prev[idx], ...pk };
-                return next;
-              }
-              return [pk, ...prev];
-            });
+            setDexCustomizations(prev => ({
+              ...prev,
+              [pk.id]: pk,
+            }));
             handleAttackerChange(pk.id);
             setMoveId(mId);
             setCurrentView('calc');

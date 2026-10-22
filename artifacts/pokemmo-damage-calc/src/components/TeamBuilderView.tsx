@@ -1,16 +1,21 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  BookOpen,
   Check,
   ChevronDown,
+  Cloud,
+  Copy,
   Download,
   Edit2,
   FileSpreadsheet,
   FileText,
   FolderOpen,
+  HardDrive,
   Plus,
   RotateCcw,
   Save,
   Search,
+  Share2,
   Shield,
   Sliders,
   Sparkles,
@@ -162,6 +167,198 @@ function memberToPokemon(member: BuilderMember, dexData: (typeof rawDexList)[0] 
   };
 }
 
+// Convert member to Pokémon Showdown text
+function memberToShowdownText(m: BuilderMember): string {
+  if (!m.pokemonId && !m.nombre) return '';
+  const lines: string[] = [];
+  const itemName = m.item && m.item !== 'none' ? ` @ ${m.item}` : '';
+  lines.push(`${m.nombre || m.pokemonId}${itemName}`);
+  if (m.ability && m.ability !== 'none') {
+    lines.push(`Ability: ${m.ability}`);
+  }
+  lines.push(`Level: ${m.level || 50}`);
+
+  const evParts: string[] = [];
+  if (m.evs.hp) evParts.push(`${m.evs.hp} HP`);
+  if (m.evs.atk) evParts.push(`${m.evs.atk} Atk`);
+  if (m.evs.def) evParts.push(`${m.evs.def} Def`);
+  if (m.evs.spa) evParts.push(`${m.evs.spa} SpA`);
+  if (m.evs.spd) evParts.push(`${m.evs.spd} SpD`);
+  if (m.evs.spe) evParts.push(`${m.evs.spe} Spe`);
+  if (evParts.length > 0) {
+    lines.push(`EVs: ${evParts.join(' / ')}`);
+  }
+
+  if (m.nature) {
+    const natCap = m.nature.charAt(0).toUpperCase() + m.nature.slice(1);
+    lines.push(`${natCap} Nature`);
+  }
+
+  (m.moves || []).forEach(mv => {
+    if (mv && mv.trim()) {
+      lines.push(`- ${mv.trim()}`);
+    }
+  });
+
+  return lines.join('\n');
+}
+
+// Convert team to Pokémon Showdown team text
+function teamToShowdownText(team: SavedTeam): string {
+  return team.members
+    .filter(m => m.pokemonId || m.nombre)
+    .map(memberToShowdownText)
+    .join('\n\n');
+}
+
+// Parse Pokémon Showdown team text into BuilderMember array
+function parseShowdownTeam(text: string, dexMap: Map<string, (typeof rawDexList)[0]>): BuilderMember[] {
+  const blocks = text.split(/\n\s*\n/).map(b => b.trim()).filter(Boolean);
+  const members: BuilderMember[] = [];
+
+  for (let i = 0; i < Math.min(6, blocks.length); i++) {
+    const block = blocks[i];
+    const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
+    if (lines.length === 0) continue;
+
+    const firstLine = lines[0];
+    let name = firstLine;
+    let item = 'none';
+
+    if (firstLine.includes('@')) {
+      const parts = firstLine.split('@');
+      name = parts[0].trim();
+      item = parts[1].trim();
+    }
+
+    let speciesName = name;
+    const nickMatch = speciesName.match(/\(([^)]+)\)/);
+    if (nickMatch) {
+      const inside = nickMatch[1].trim();
+      if (inside === 'M' || inside === 'F') {
+        speciesName = speciesName.replace(/\([MF]\)/i, '').trim();
+      } else {
+        speciesName = inside;
+      }
+    }
+
+    const cleanSpecies = speciesName.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const foundDex =
+      dexMap.get(cleanSpecies) ||
+      rawDexList.find(d => d.id.toLowerCase().replace(/[^a-z0-9]/g, '') === cleanSpecies || d.nombre.toLowerCase().replace(/[^a-z0-9]/g, '') === cleanSpecies);
+
+    let ability = foundDex?.abilities?.[0] || 'none';
+    let nature = 'hardy';
+    let level = 50;
+    const evs: StatValues = { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 };
+    const ivs: StatValues = { hp: 31, atk: 31, def: 31, spa: 31, spd: 31, spe: 31 };
+    const moves: [string, string, string, string] = ['', '', '', ''];
+    let moveIdx = 0;
+
+    for (let j = 1; j < lines.length; j++) {
+      const line = lines[j];
+      if (line.toLowerCase().startsWith('ability:')) {
+        ability = line.slice(8).trim();
+      } else if (line.toLowerCase().startsWith('level:')) {
+        const lvl = parseInt(line.slice(6).trim(), 10);
+        if (!isNaN(lvl)) level = lvl;
+      } else if (line.toLowerCase().endsWith('nature')) {
+        nature = line.replace(/nature/i, '').trim().toLowerCase();
+      } else if (line.toLowerCase().startsWith('evs:')) {
+        const parts = line.slice(4).split('/');
+        for (const p of parts) {
+          const m = p.trim().match(/(\d+)\s*([a-zA-Z]+)/);
+          if (m) {
+            const val = parseInt(m[1], 10);
+            const statKey = m[2].toLowerCase();
+            if (statKey.includes('hp')) evs.hp = val;
+            else if (statKey.includes('atk')) evs.atk = val;
+            else if (statKey.includes('def')) evs.def = val;
+            else if (statKey.includes('spa')) evs.spa = val;
+            else if (statKey.includes('spd')) evs.spd = val;
+            else if (statKey.includes('spe')) evs.spe = val;
+          }
+        }
+      } else if (line.startsWith('-') && moveIdx < 4) {
+        moves[moveIdx] = line.slice(1).trim();
+        moveIdx++;
+      }
+    }
+
+    members.push({
+      id: `slot-${i + 1}`,
+      pokemonId: foundDex?.id || speciesName,
+      nombre: foundDex?.nombre || speciesName,
+      item,
+      ability,
+      nature,
+      level,
+      moves,
+      evs,
+      ivs,
+    });
+  }
+
+  while (members.length < 6) {
+    members.push(createEmptyMember(members.length));
+  }
+
+  return members;
+}
+
+// Sanitize any raw imported JSON member to guarantee valid fields
+function sanitizeImportedMember(raw: unknown, slotIdx: number, dexMap: Map<string, (typeof rawDexList)[0]>): BuilderMember {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const pokemonId = String(r.pokemonId || r.id || r.species || '');
+  const nombre = String(r.nombre || r.name || pokemonId);
+  const cleanId = pokemonId.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const cleanName = nombre.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const foundDex =
+    dexMap.get(cleanId) ||
+    dexMap.get(cleanName) ||
+    rawDexList.find(d => d.id.toLowerCase().replace(/[^a-z0-9]/g, '') === cleanId || d.nombre.toLowerCase().replace(/[^a-z0-9]/g, '') === cleanName);
+
+  const rawEvs = (r.evs && typeof r.evs === 'object' ? r.evs : {}) as Record<string, number>;
+  const rawIvs = (r.ivs && typeof r.ivs === 'object' ? r.ivs : {}) as Record<string, number>;
+  const evs: StatValues = {
+    hp: Number(rawEvs.hp) || 0,
+    atk: Number(rawEvs.atk) || 0,
+    def: Number(rawEvs.def) || 0,
+    spa: Number(rawEvs.spa) || 0,
+    spd: Number(rawEvs.spd) || 0,
+    spe: Number(rawEvs.spe) || 0,
+  };
+  const ivs: StatValues = {
+    hp: typeof rawIvs.hp === 'number' ? rawIvs.hp : 31,
+    atk: typeof rawIvs.atk === 'number' ? rawIvs.atk : 31,
+    def: typeof rawIvs.def === 'number' ? rawIvs.def : 31,
+    spa: typeof rawIvs.spa === 'number' ? rawIvs.spa : 31,
+    spd: typeof rawIvs.spd === 'number' ? rawIvs.spd : 31,
+    spe: typeof rawIvs.spe === 'number' ? rawIvs.spe : 31,
+  };
+
+  const rawMoves = Array.isArray(r.moves) ? r.moves : [];
+  const moves: [string, string, string, string] = [
+    String(rawMoves[0] || ''),
+    String(rawMoves[1] || ''),
+    String(rawMoves[2] || ''),
+    String(rawMoves[3] || ''),
+  ];
+
+  return {
+    id: `slot-${slotIdx + 1}`,
+    pokemonId: foundDex?.id || pokemonId,
+    nombre: foundDex?.nombre || nombre,
+    item: String(r.item || 'none'),
+    ability: String(r.ability || foundDex?.abilities?.[0] || 'none'),
+    nature: String(r.nature || 'hardy'),
+    level: Number(r.level) || 50,
+    moves,
+    evs,
+    ivs,
+  };
+}
+
 // Type effectiveness table for defensive synergy
 const TYPE_CHART: Record<string, Record<string, number>> = {
   normal: { rock: 0.5, ghost: 0, steel: 0.5 },
@@ -183,11 +380,157 @@ const TYPE_CHART: Record<string, Record<string, number>> = {
   steel: { fire: 0.5, water: 0.5, electric: 0.5, ice: 2, rock: 2, steel: 0.5 },
 };
 
-function getDefensiveMultiplier(defType1: string, defType2: string | undefined, atkType: string): number {
+function getDefensiveMultiplier(
+  defType1: string,
+  defType2: string | undefined,
+  atkType: string,
+  ability?: string,
+  pokemonNameOrId?: string,
+  dexAbilities?: string[]
+): number {
+  const normAbility = (ability || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const normDexAbs = (dexAbilities || []).map(a => a.toLowerCase().replace(/[^a-z0-9]/g, ''));
+  const normName = (pokemonNameOrId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  const hasAbility = (slug: string) =>
+    normAbility.includes(slug) ||
+    normDexAbs.some(a => a.includes(slug));
+
+  // 1. Levitate (Levitación) -> Immune to Ground (Rotom, Flygon, Weezing, Eelektross, Carnivine, etc.)
+  if (atkType === 'ground') {
+    if (
+      hasAbility('levitate') ||
+      hasAbility('levitacion') ||
+      normName.includes('rotom') ||
+      normName.includes('weezing') ||
+      normName.includes('koffing') ||
+      normName.includes('flygon') ||
+      normName.includes('eelektross') ||
+      normName.includes('carnivine') ||
+      normName.includes('bronzong') ||
+      normName.includes('claydol') ||
+      normName.includes('cryogonal') ||
+      normName.includes('cresselia') ||
+      normName.includes('latios') ||
+      normName.includes('latias') ||
+      normName.includes('uxie') ||
+      normName.includes('mesprit') ||
+      normName.includes('azelf') ||
+      normName.includes('mismagius') ||
+      normName.includes('misdreavus')
+    ) {
+      return 0;
+    }
+  }
+
+  // 2. Fire immunities (Flash Fire / Absorbe Fuego)
+  if (atkType === 'fire') {
+    if (hasAbility('flashfire') || hasAbility('absorbefuego')) {
+      return 0;
+    }
+  }
+
+  // 3. Water immunities (Water Absorb, Storm Drain, Dry Skin)
+  if (atkType === 'water') {
+    if (
+      hasAbility('waterabsorb') ||
+      hasAbility('absorbeagua') ||
+      hasAbility('stormdrain') ||
+      hasAbility('colector') ||
+      hasAbility('dryskin') ||
+      hasAbility('pielseca')
+    ) {
+      return 0;
+    }
+  }
+
+  // 4. Electric immunities (Volt Absorb, Motor Drive, Lightning Rod)
+  if (atkType === 'electric') {
+    if (
+      hasAbility('voltabsorb') ||
+      hasAbility('absorbeelec') ||
+      hasAbility('motordrive') ||
+      hasAbility('electromotor') ||
+      hasAbility('lightningrod') ||
+      hasAbility('pararrayos')
+    ) {
+      return 0;
+    }
+  }
+
+  // 5. Grass immunities (Sap Sipper / Herbívoro)
+  if (atkType === 'grass') {
+    if (hasAbility('sapsipper') || hasAbility('herbivoro')) {
+      return 0;
+    }
+  }
+
+  // 6. Wonder Guard (Superguarda) (Shedinja)
+  if (hasAbility('wonderguard') || hasAbility('superguarda') || normName.includes('shedinja')) {
+    const baseMult = (TYPE_CHART[atkType]?.[defType1] ?? 1) * (defType2 ? (TYPE_CHART[atkType]?.[defType2] ?? 1) : 1);
+    return baseMult > 1 ? baseMult : 0;
+  }
+
   const m1 = TYPE_CHART[atkType]?.[defType1] ?? 1;
   const m2 = defType2 ? (TYPE_CHART[atkType]?.[defType2] ?? 1) : 1;
   return m1 * m2;
 }
+
+// Exact PokéType abbreviations and colors from the user screenshot (Screenshot_20261017_145105_PokeType.jpg)
+const POKETYPE_MAP: Record<string, { abbrev: string; bg: string; name: string }> = {
+  fire: { abbrev: 'Fueg', bg: '#df7948', name: 'Fuego' },
+  fuego: { abbrev: 'Fueg', bg: '#df7948', name: 'Fuego' },
+  water: { abbrev: 'Agua', bg: '#5982c7', name: 'Agua' },
+  agua: { abbrev: 'Agua', bg: '#5982c7', name: 'Agua' },
+  grass: { abbrev: 'Plan', bg: '#7cb463', name: 'Planta' },
+  planta: { abbrev: 'Plan', bg: '#7cb463', name: 'Planta' },
+  electric: { abbrev: 'Eléc', bg: '#d8b945', name: 'Eléctrico' },
+  electrico: { abbrev: 'Eléc', bg: '#d8b945', name: 'Eléctrico' },
+  ice: { abbrev: 'Hiel', bg: '#7eb4b2', name: 'Hielo' },
+  hielo: { abbrev: 'Hiel', bg: '#7eb4b2', name: 'Hielo' },
+  fighting: { abbrev: 'Luch', bg: '#b8443b', name: 'Lucha' },
+  lucha: { abbrev: 'Luch', bg: '#b8443b', name: 'Lucha' },
+  poison: { abbrev: 'Vene', bg: '#9c4c9b', name: 'Veneno' },
+  veneno: { abbrev: 'Vene', bg: '#9c4c9b', name: 'Veneno' },
+  ground: { abbrev: 'Tier', bg: '#cca048', name: 'Tierra' },
+  tierra: { abbrev: 'Tier', bg: '#cca048', name: 'Tierra' },
+  flying: { abbrev: 'Vola', bg: '#869ce0', name: 'Volador' },
+  volador: { abbrev: 'Vola', bg: '#869ce0', name: 'Volador' },
+  psychic: { abbrev: 'Psí', bg: '#e85c7c', name: 'Psíquico' },
+  psiquico: { abbrev: 'Psí', bg: '#e85c7c', name: 'Psíquico' },
+  bug: { abbrev: 'Bich', bg: '#94a838', name: 'Bicho' },
+  bicho: { abbrev: 'Bich', bg: '#94a838', name: 'Bicho' },
+  rock: { abbrev: 'Roca', bg: '#b29e4e', name: 'Roca' },
+  roca: { abbrev: 'Roca', bg: '#b29e4e', name: 'Roca' },
+  ghost: { abbrev: 'Fant', bg: '#6e5898', name: 'Fantasma' },
+  fantasma: { abbrev: 'Fant', bg: '#6e5898', name: 'Fantasma' },
+  dragon: { abbrev: 'Drag', bg: '#6054cf', name: 'Dragón' },
+  dark: { abbrev: 'Sini', bg: '#5f4e45', name: 'Siniestro' },
+  siniestro: { abbrev: 'Sini', bg: '#5f4e45', name: 'Siniestro' },
+  steel: { abbrev: 'Acer', bg: '#8f98a5', name: 'Acero' },
+  acero: { abbrev: 'Acer', bg: '#8f98a5', name: 'Acero' },
+  normal: { abbrev: 'Norm', bg: '#949488', name: 'Normal' },
+};
+
+const POKETYPE_ORDER = [
+  'fire',
+  'water',
+  'grass',
+  'electric',
+  'ice',
+  'fighting',
+  'poison',
+  'ground',
+  'flying',
+  'psychic',
+  'bug',
+  'rock',
+  'ghost',
+  'dragon',
+  'dark',
+  'steel',
+  'normal',
+];
 
 export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
   pokemonList,
@@ -231,7 +574,23 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
   const [isEditingTeamName, setIsEditingTeamName] = useState<boolean>(false);
   const [teamNameDraft, setTeamNameDraft] = useState<string>('');
   const [showChangePokemonModal, setShowChangePokemonModal] = useState<boolean>(false);
+  const [showPokedexModal, setShowPokedexModal] = useState<boolean>(false);
+  const [showSendToCalcModal, setShowSendToCalcModal] = useState<boolean>(false);
+  const [calcModalMove, setCalcModalMove] = useState<string>('');
+  const [builderSearchQuery, setBuilderSearchQuery] = useState<string>('');
+  const [builderGenFilter, setBuilderGenFilter] = useState<number | 'all'>('all');
+  const [builderTierFilter, setBuilderTierFilter] = useState<'all' | 'ou' | 'uu' | 'nu'>('all');
   const [teamToDeleteId, setTeamToDeleteId] = useState<string | null>(null);
+  const [showExportModal, setShowExportModal] = useState<boolean>(false);
+  const [showImportModal, setShowImportModal] = useState<boolean>(false);
+  const [importPasteText, setImportPasteText] = useState<string>('');
+
+  const openChangePokemonModal = () => {
+    setBuilderSearchQuery('');
+    setBuilderGenFilter('all');
+    setBuilderTierFilter('all');
+    setShowChangePokemonModal(true);
+  };
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -271,6 +630,134 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
     const bareSlug = clean.replace(/^pk-/, '').split('-')[0];
     return dexMap.get(bareSlug);
   }, [currentMember.pokemonId, currentMember.nombre, dexMap]);
+
+  // Reliable dex lookup for any team member (even custom/stored IDs)
+  const getDexForMember = (member: TeamMember) => {
+    if (!member.pokemonId && !member.nombre) return undefined;
+    const clean = (member.pokemonId || '').toLowerCase();
+    if (dexMap.has(clean)) return dexMap.get(clean);
+    if (member.nombre && dexMap.has(member.nombre.toLowerCase())) {
+      return dexMap.get(member.nombre.toLowerCase());
+    }
+    const num = getPokemonDexNum(member.pokemonId) || getPokemonDexNum(member.nombre);
+    if (num > 0 && dexMap.has(String(num))) {
+      return dexMap.get(String(num));
+    }
+    const bareSlug = clean.replace(/^pk-/, '').split('-')[0];
+    return dexMap.get(bareSlug);
+  };
+
+  // Filtered Pokémon list for builder in-modal search
+  const builderFilteredPokemon = useMemo(() => {
+    let list = rawDexList;
+    if (builderGenFilter !== 'all') {
+      list = list.filter(p => p.generation === builderGenFilter);
+    }
+    if (builderTierFilter !== 'all') {
+      const targetTeam = builderTierFilter === 'ou' ? equipoOU : builderTierFilter === 'uu' ? equipoUU : equipoNU;
+      const tierIds = new Set(targetTeam.map(t => t.id.toLowerCase()));
+      list = list.filter(p => tierIds.has(p.id.toLowerCase()) || tierIds.has(p.nombre.toLowerCase()));
+    }
+    const q = builderSearchQuery.trim().toLowerCase();
+    if (q) {
+      const qNum = parseInt(q.replace(/^#/, ''), 10);
+      list = list.filter(p => {
+        const matchesName = p.nombre.toLowerCase().includes(q) || p.id.toLowerCase().includes(q);
+        const matchesNum = !isNaN(qNum) && p.num === qNum;
+        const matchesType = typeName(p.tipo1).toLowerCase().includes(q) || (p.tipo2 && typeName(p.tipo2).toLowerCase().includes(q));
+        return matchesName || matchesNum || matchesType;
+      });
+    }
+    return list;
+  }, [builderSearchQuery, builderGenFilter, builderTierFilter, equipoOU, equipoUU, equipoNU]);
+
+  // PokeType calculation: resistant, weak, and immune types for team members
+  const tiposData = useMemo(() => {
+    const filledMembers = team.filter(m => m.pokemonId || m.nombre);
+
+    const resistantRows: {
+      typeId: string;
+      abbrev: string;
+      name: string;
+      bg: string;
+      pokemons: { memberId: string; name: string; dexNum: number }[];
+    }[] = [];
+
+    const weakRows: {
+      typeId: string;
+      abbrev: string;
+      name: string;
+      bg: string;
+      pokemons: { memberId: string; name: string; dexNum: number }[];
+    }[] = [];
+
+    const immuneRows: {
+      typeId: string;
+      abbrev: string;
+      name: string;
+      bg: string;
+      pokemons: { memberId: string; name: string; dexNum: number }[];
+    }[] = [];
+
+    for (const atkTypeId of POKETYPE_ORDER) {
+      const pInfo = POKETYPE_MAP[atkTypeId] || { abbrev: atkTypeId.slice(0, 4), bg: '#555', name: atkTypeId };
+      const resPks: { memberId: string; name: string; dexNum: number }[] = [];
+      const weakPks: { memberId: string; name: string; dexNum: number }[] = [];
+      const immunePks: { memberId: string; name: string; dexNum: number }[] = [];
+
+      for (const m of filledMembers) {
+        const dex = getDexForMember(m);
+        if (dex) {
+          const mult = getDefensiveMultiplier(
+            dex.tipo1,
+            dex.tipo2,
+            atkTypeId,
+            m.ability,
+            m.pokemonId || m.nombre,
+            dex.abilities
+          );
+          const dexNum = dex.num || getPokemonDexNum(m.pokemonId) || getPokemonDexNum(m.nombre);
+          if (mult === 0) {
+            immunePks.push({ memberId: m.id, name: m.nombre || dex.nombre, dexNum });
+          } else if (mult < 1 && mult > 0) {
+            resPks.push({ memberId: m.id, name: m.nombre || dex.nombre, dexNum });
+          } else if (mult > 1) {
+            weakPks.push({ memberId: m.id, name: m.nombre || dex.nombre, dexNum });
+          }
+        }
+      }
+
+      if (resPks.length > 0) {
+        resistantRows.push({
+          typeId: atkTypeId,
+          abbrev: pInfo.abbrev,
+          name: pInfo.name,
+          bg: pInfo.bg,
+          pokemons: resPks,
+        });
+      }
+      if (weakPks.length > 0) {
+        weakRows.push({
+          typeId: atkTypeId,
+          abbrev: pInfo.abbrev,
+          name: pInfo.name,
+          bg: pInfo.bg,
+          pokemons: weakPks,
+        });
+      }
+      if (immunePks.length > 0) {
+        immuneRows.push({
+          typeId: atkTypeId,
+          abbrev: pInfo.abbrev,
+          name: pInfo.name,
+          bg: pInfo.bg,
+          pokemons: immunePks,
+        });
+      }
+    }
+
+    return { filledMembers, resistantRows, weakRows, immuneRows };
+  }, [team, dexMap]);
 
   // Available abilities for current pokemon with full descriptions
   const currentAbilitiesWithDesc = useMemo(() => {
@@ -434,9 +921,109 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
     }
   };
 
-  // Download team file .json
-  const handleDownloadTeamFile = () => {
+  // Helper to immediately activate and implement any imported or downloaded team
+  const applyAndImplementImportedTeam = (newTeam: SavedTeam) => {
+    setTeams(prev => {
+      const exists = prev.some(t => t.id === newTeam.id);
+      const next = exists ? prev.map(t => (t.id === newTeam.id ? newTeam : t)) : [newTeam, ...prev];
+      try {
+        localStorage.setItem(STORAGE_TEAMS_COLLECTION_KEY, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+    setActiveTeamId(newTeam.id);
+    setActiveSlot(0);
+    setActiveTab('equipo');
+    onToast(`Equipo "${newTeam.name}" importado e implementado.`);
+  };
+
+  // Robust universal team parser (handles JSON, arrays, Showdown text, PokeMMO exports)
+  const handleImportContent = (content: string, fallbackName = 'Equipo Importado') => {
+    const trimmed = content.trim();
+    if (!trimmed) {
+      onToast('El contenido está vacío.');
+      return;
+    }
+
+    // 1. Try parsing as JSON first
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+
+        // Case A: Standard app team object { name, members }
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && Array.isArray(parsed.members)) {
+          const members = parsed.members.map((m: unknown, idx: number) => sanitizeImportedMember(m, idx, dexMap));
+          while (members.length < 6) members.push(createEmptyMember(members.length));
+          const importedTeam: SavedTeam = {
+            id: `team-${Date.now()}`,
+            name: parsed.name || fallbackName,
+            updatedAt: Date.now(),
+            members: members.slice(0, 6) as BuilderMember[],
+          };
+          applyAndImplementImportedTeam(importedTeam);
+          return;
+        }
+
+        // Case B: Collection of teams array [{ name, members }, ...]
+        if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object' && parsed[0].members) {
+          const first = parsed[0];
+          const members = first.members.map((m: unknown, idx: number) => sanitizeImportedMember(m, idx, dexMap));
+          while (members.length < 6) members.push(createEmptyMember(members.length));
+          const importedTeam: SavedTeam = {
+            id: `team-${Date.now()}`,
+            name: first.name || fallbackName,
+            updatedAt: Date.now(),
+            members: members.slice(0, 6) as BuilderMember[],
+          };
+          applyAndImplementImportedTeam(importedTeam);
+          return;
+        }
+
+        // Case C: Array of Pokemon members directly [member1, member2, ...]
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const members = parsed.map((m: unknown, idx: number) => sanitizeImportedMember(m, idx, dexMap));
+          while (members.length < 6) members.push(createEmptyMember(members.length));
+          const importedTeam: SavedTeam = {
+            id: `team-${Date.now()}`,
+            name: fallbackName,
+            updatedAt: Date.now(),
+            members: members.slice(0, 6) as BuilderMember[],
+          };
+          applyAndImplementImportedTeam(importedTeam);
+          return;
+        }
+      } catch {
+        // Fall through to Showdown text parsing
+      }
+    }
+
+    // 2. Try parsing as Pokémon Showdown / PokeMMO text format
     try {
+      const parsedMembers = parseShowdownTeam(trimmed, dexMap);
+      if (parsedMembers.some(m => m.pokemonId || m.nombre)) {
+        const firstFilled = parsedMembers.find(m => m.nombre);
+        const autoName = firstFilled ? `Equipo ${firstFilled.nombre}` : fallbackName;
+        const importedTeam: SavedTeam = {
+          id: `team-${Date.now()}`,
+          name: autoName,
+          updatedAt: Date.now(),
+          members: parsedMembers,
+        };
+        applyAndImplementImportedTeam(importedTeam);
+        return;
+      }
+    } catch {
+      // ignore
+    }
+
+    onToast('No se reconoció el formato de equipo (debe ser JSON o texto Showdown).');
+  };
+
+  // Direct download .json (ensures team is implemented and saved in app)
+  const handleDirectDownloadJson = () => {
+    try {
+      // Ensure current team is also saved in app storage
+      handleSaveTeamLocal();
       const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(currentTeam, null, 2));
       const downloadAnchor = document.createElement('a');
       const safeName = currentTeam.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
@@ -445,41 +1032,150 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
       document.body.appendChild(downloadAnchor);
       downloadAnchor.click();
       downloadAnchor.remove();
-      onToast(`Archivo del equipo descargado.`);
+      onToast(`Equipo descargado e implementado en tu app.`);
     } catch {
       onToast('Error al descargar el archivo del equipo.');
     }
   };
 
-  // Import team file .json
+  // Export to internal storage in a folder created by the app ("PokeMMO_Equipos")
+  const handleExportToInternalStorage = async () => {
+    // Keep team saved in app
+    handleSaveTeamLocal();
+    const safeName = currentTeam.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const fileName = `${safeName || 'equipo'}.poketeam.json`;
+    const fileContent = JSON.stringify(currentTeam, null, 2);
+
+    // 1. Try File System Access API (showDirectoryPicker to create or access PokeMMO_Equipos folder)
+    if ('showDirectoryPicker' in window) {
+      try {
+        const dirHandle = await (window as unknown as { showDirectoryPicker: (opts: unknown) => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker({
+          id: 'pokemmo-teams-folder',
+          mode: 'readwrite',
+        });
+        const appFolder = await dirHandle.getDirectoryHandle('PokeMMO_Equipos', { create: true });
+        const fileHandle = await appFolder.getFileHandle(fileName, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(fileContent);
+        await writable.close();
+        onToast(`Equipo guardado en la carpeta "PokeMMO_Equipos" de tu almacenamiento.`);
+        setShowExportModal(false);
+        return;
+      } catch (err: unknown) {
+        if ((err as Error)?.name === 'AbortError') return;
+      }
+    }
+
+    // 2. Try showSaveFilePicker
+    if ('showSaveFilePicker' in window) {
+      try {
+        const fileHandle = await (window as unknown as { showSaveFilePicker: (opts: unknown) => Promise<FileSystemFileHandle> }).showSaveFilePicker({
+          suggestedName: fileName,
+          types: [
+            {
+              description: 'Equipo PokeMMO (*.poketeam.json)',
+              accept: { 'application/json': ['.json', '.poketeam.json'] },
+            },
+          ],
+        });
+        const writable = await fileHandle.createWritable();
+        await writable.write(fileContent);
+        await writable.close();
+        onToast(`Equipo guardado en tu almacenamiento interno.`);
+        setShowExportModal(false);
+        return;
+      } catch (err: unknown) {
+        if ((err as Error)?.name === 'AbortError') return;
+      }
+    }
+
+    // 3. Try Web Share API (Android native sheet lets user choose File Manager / Internal storage)
+    if (typeof navigator !== 'undefined' && navigator.share && navigator.canShare) {
+      try {
+        const blob = new Blob([fileContent], { type: 'application/json' });
+        const file = new File([blob], fileName, { type: 'application/json' });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            title: `PokeMMO Equipo: ${currentTeam.name}`,
+            text: `Equipo ${currentTeam.name} para PokeMMO`,
+            files: [file],
+          });
+          onToast(`Equipo exportado a almacenamiento.`);
+          setShowExportModal(false);
+          return;
+        }
+      } catch (err: unknown) {
+        if ((err as Error)?.name === 'AbortError') return;
+      }
+    }
+
+    // Fallback: direct download
+    handleDirectDownloadJson();
+    setShowExportModal(false);
+  };
+
+  // Export to Google Drive
+  const handleExportToGoogleDrive = async () => {
+    // Keep team saved in app
+    handleSaveTeamLocal();
+    const safeName = currentTeam.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const fileName = `${safeName || 'equipo'}.poketeam.json`;
+    const fileContent = JSON.stringify(currentTeam, null, 2);
+
+    // On mobile / Android, navigator.share with files includes "Guardar en Drive" directly!
+    if (typeof navigator !== 'undefined' && navigator.share && navigator.canShare) {
+      try {
+        const blob = new Blob([fileContent], { type: 'application/json' });
+        const file = new File([blob], fileName, { type: 'application/json' });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            title: `PokeMMO Equipo: ${currentTeam.name}`,
+            text: `Guardar en Google Drive: ${currentTeam.name}`,
+            files: [file],
+          });
+          onToast(`Selecciona "Guardar en Drive" en el menú.`);
+          setShowExportModal(false);
+          return;
+        }
+      } catch (err: unknown) {
+        if ((err as Error)?.name === 'AbortError') return;
+      }
+    }
+
+    // Fallback on desktop: Download file and open Google Drive
+    handleDirectDownloadJson();
+    window.open('https://drive.google.com/drive/u/0/my-drive', '_blank', 'noopener,noreferrer');
+    onToast(`Archivo descargado. Abriendo Google Drive para subirlo.`);
+    setShowExportModal(false);
+  };
+
+  // Copy or download Showdown format
+  const handleCopyShowdown = () => {
+    const text = teamToShowdownText(currentTeam);
+    if (!text.trim()) {
+      onToast('El equipo está vacío.');
+      return;
+    }
+    navigator.clipboard.writeText(text).then(
+      () => onToast('Formato Showdown copiado al portapapeles.'),
+      () => onToast('Error al copiar al portapapeles.')
+    );
+  };
+
+  // Import team file (.json or .txt)
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
     reader.onload = event => {
-      try {
-        const content = event.target?.result as string;
-        const parsed = JSON.parse(content);
-        if (parsed && Array.isArray(parsed.members) && parsed.members.length === 6) {
-          const importedTeam: SavedTeam = {
-            id: `team-${Date.now()}`,
-            name: parsed.name || `Importado (${file.name.replace('.json', '')})`,
-            updatedAt: Date.now(),
-            members: parsed.members,
-          };
-          setTeams(prev => [...prev, importedTeam]);
-          setActiveTeamId(importedTeam.id);
-          onToast(`Equipo "${importedTeam.name}" importado con éxito.`);
-        } else {
-          onToast('El archivo no tiene el formato válido de equipo de 6 Pokémon.');
-        }
-      } catch {
-        onToast('Error al leer el archivo JSON.');
-      }
+      const content = event.target?.result as string;
+      const cleanFileName = file.name.replace(/\.[^/.]+$/, '');
+      handleImportContent(content, cleanFileName || 'Equipo Importado');
     };
     reader.readAsText(file);
     if (fileInputRef.current) fileInputRef.current.value = '';
+    setShowImportModal(false);
   };
 
   // Adjust EV for a stat
@@ -517,7 +1213,7 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
       <input
         type="file"
         ref={fileInputRef}
-        accept=".json,application/json"
+        accept=".json,.txt,.poketeam,application/json,text/plain"
         className="hidden"
         onChange={handleFileChange}
       />
@@ -683,22 +1379,22 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
             <Save size={15} />
           </button>
 
-          {/* DESCARGAR JSON */}
+          {/* EXPORTAR EQUIPO (Almacenamiento Interno, Google Drive o JSON) */}
           <button
             type="button"
             className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-slate-700/80 transition-colors"
-            title="Descargar archivo .json a descargas"
-            onClick={handleDownloadTeamFile}
+            title="Exportar equipo (Almacenamiento interno, Google Drive o JSON)"
+            onClick={() => setShowExportModal(true)}
           >
             <Download size={15} />
           </button>
 
-          {/* CARGAR ARCHIVO */}
+          {/* IMPORTAR EQUIPO (Archivo o texto Showdown) */}
           <button
             type="button"
             className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700/80 transition-colors"
-            title="Cargar archivo .json desde tu dispositivo"
-            onClick={() => fileInputRef.current?.click()}
+            title="Importar equipo (Archivo o texto Showdown)"
+            onClick={() => setShowImportModal(true)}
           >
             <Upload size={15} />
           </button>
@@ -759,18 +1455,32 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
           {currentMember.pokemonId && currentDex ? (
             <>
               {/* POKEMON NUMBER, NAME & TYPE HEADER: e.g. "#245 Suicune - Agua" WITH ICON */}
-              <div className="flex items-center justify-center gap-2.5">
-                {(() => {
-                  const dNum = getPokemonDexNum(currentDex.num) || getPokemonDexNum(currentMember.pokemonId);
-                  const sStyle = dNum > 0 ? getPokemonShowdownSpriteStyle(dNum) : {};
-                  return dNum > 0 ? (
-                    <div className="w-10 h-[30px] flex-shrink-0 drop-shadow-sm origin-center" style={sStyle} />
-                  ) : null;
-                })()}
-                <h3 className="text-base sm:text-lg font-bold text-white tracking-wide">
-                  #{getPokemonDexNum(currentDex.num)} {currentDex.nombre} - {typeName(currentDex.tipo1)}
-                  {currentDex.tipo2 ? ` / ${typeName(currentDex.tipo2)}` : ''}
-                </h3>
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-2">
+                <div
+                  className="flex items-center justify-center gap-2.5 cursor-pointer group"
+                  onClick={openChangePokemonModal}
+                  title="Haz clic para cambiar Pokémon de este Slot"
+                >
+                  {(() => {
+                    const dNum = getPokemonDexNum(currentDex.num) || getPokemonDexNum(currentMember.pokemonId);
+                    const sStyle = dNum > 0 ? getPokemonShowdownSpriteStyle(dNum) : {};
+                    return dNum > 0 ? (
+                      <div className="w-10 h-[30px] flex-shrink-0 drop-shadow-sm origin-center group-hover:scale-110 transition-transform" style={sStyle} />
+                    ) : null;
+                  })()}
+                  <h3 className="text-base sm:text-lg font-bold text-white tracking-wide group-hover:text-emerald-300 transition-colors">
+                    #{getPokemonDexNum(currentDex.num)} {currentDex.nombre} - {typeName(currentDex.tipo1)}
+                    {currentDex.tipo2 ? ` / ${typeName(currentDex.tipo2)}` : ''}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  className="py-1 px-2.5 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5 transition-colors"
+                  onClick={openChangePokemonModal}
+                >
+                  <Search size={13} />
+                  <span>Cambiar Pokémon</span>
+                </button>
               </div>
 
               {/* ROW: ARTÍCULO (ITEM) & NATURALEZA (NATURE) */}
@@ -992,11 +1702,11 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
                 })}
               </div>
 
-              {/* ACTION BUTTONS ROW: [ Retirar ] [ Pokédex ] (Exact format from Screenshot) */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-3 border-t border-slate-800">
+              {/* ACTION BUTTONS ROW: [ Retirar ] [ Cambiar ] [ Pokédex ] [ Calculadora ] */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-3 border-t border-slate-800">
                 <button
                   type="button"
-                  className="py-2.5 px-4 rounded-md font-bold text-xs sm:text-sm bg-[#e2e8f0] hover:bg-white text-slate-900 text-center transition-all shadow active:scale-[0.99]"
+                  className="py-2.5 px-3 rounded-md font-bold text-xs sm:text-sm bg-[#e2e8f0] hover:bg-white text-slate-900 text-center transition-all shadow active:scale-[0.99]"
                   onClick={() => handleWithdrawSlot(activeSlot)}
                 >
                   Retirar
@@ -1004,18 +1714,27 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
 
                 <button
                   type="button"
-                  className="py-2.5 px-4 rounded-md font-bold text-xs sm:text-sm bg-[#e2e8f0] hover:bg-white text-slate-900 text-center transition-all shadow active:scale-[0.99]"
-                  onClick={() => setShowChangePokemonModal(true)}
+                  className="py-2.5 px-3 rounded-md font-bold text-xs sm:text-sm bg-indigo-600 hover:bg-indigo-500 text-white text-center transition-all shadow flex items-center justify-center gap-1.5 active:scale-[0.99]"
+                  onClick={openChangePokemonModal}
+                >
+                  <Search size={14} />
+                  <span>Cambiar</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="py-2.5 px-3 rounded-md font-bold text-xs sm:text-sm bg-[#e2e8f0] hover:bg-white text-slate-900 text-center transition-all shadow active:scale-[0.99]"
+                  onClick={() => setShowPokedexModal(true)}
                 >
                   Pokédex
                 </button>
 
                 <button
                   type="button"
-                  className="col-span-2 sm:col-span-1 py-2.5 px-4 rounded-md font-bold text-xs sm:text-sm bg-emerald-600 hover:bg-emerald-500 text-white text-center transition-all shadow flex items-center justify-center gap-1.5 active:scale-[0.99]"
+                  className="py-2.5 px-3 rounded-md font-bold text-xs sm:text-sm bg-emerald-600 hover:bg-emerald-500 text-white text-center transition-all shadow flex items-center justify-center gap-1.5 active:scale-[0.99]"
                   onClick={() => {
-                    const pk = memberToPokemon(currentMember, currentDex);
-                    onSendToCalculator(pk, 'attacker', currentMember.moves[0]);
+                    setCalcModalMove(currentMember.moves[0] || '');
+                    setShowSendToCalcModal(true);
                   }}
                 >
                   <Swords size={15} />
@@ -1048,77 +1767,130 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
         </section>
       )}
 
-      {/* SUB-TAB 2: [ TIPOS ] - Team Defensive Synergy & Weakness Matrix */}
+      {/* SUB-TAB 2: [ TIPOS ] - Team Weaknesses, Resistances & Immunities */}
       {activeTab === 'tipos' && (
-        <section className="bg-slate-950/90 p-4 rounded-2xl border border-slate-800 flex flex-col gap-3 shadow-xl">
-          <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-            <span className="text-xs font-bold text-white uppercase tracking-wider">
-              Cobertura Defensiva del Equipo (17 Tipos)
-            </span>
-            <span className="text-[11px] text-slate-400">
-              {team.filter(m => m.pokemonId).length} / 6 Pokémon en equipo
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-            {TYPES.map(([atkTypeId, atkTypeLabel]) => {
-              const members = team.filter(m => m.pokemonId);
-              let weakCount = 0;
-              let resistCount = 0;
-              let immuneCount = 0;
-
-              for (const m of members) {
-                const dex = dexMap.get(m.pokemonId.toLowerCase());
-                if (dex) {
-                  const mult = getDefensiveMultiplier(dex.tipo1, dex.tipo2, atkTypeId);
-                  if (mult > 1) weakCount++;
-                  else if (mult === 0) immuneCount++;
-                  else if (mult < 1) resistCount++;
-                }
-              }
-
-              const typeColor = TYPE_COLORS[atkTypeId] || { bg: '#444', text: '#fff' };
-
-              return (
-                <div
-                  key={atkTypeId}
-                  className="flex items-center justify-between p-2 rounded-lg bg-slate-900 border border-slate-800"
-                >
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="px-2 py-0.5 rounded text-[11px] font-bold text-white"
-                      style={{ backgroundColor: typeColor.bg }}
-                    >
-                      {atkTypeLabel}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-3 font-mono text-xs">
-                    <span
-                      className={`font-bold ${
-                        weakCount >= 3 ? 'text-rose-400' : weakCount > 0 ? 'text-amber-300' : 'text-slate-500'
-                      }`}
-                      title="Débiles"
-                    >
-                      {weakCount} Déb.
-                    </span>
-                    <span
-                      className={`font-bold ${resistCount > 0 ? 'text-emerald-400' : 'text-slate-500'}`}
-                      title="Resistencias"
-                    >
-                      {resistCount} Res.
-                    </span>
-                    <span
-                      className={`font-bold ${immuneCount > 0 ? 'text-indigo-400' : 'text-slate-500'}`}
-                      title="Inmunidades"
-                    >
-                      {immuneCount} Inm.
-                    </span>
-                  </div>
+        <section className="bg-[#121519] p-3 sm:p-5 rounded-2xl border border-slate-800 shadow-xl min-h-[300px]">
+          {tiposData.filledMembers.length === 0 ? (
+            <div className="py-12 text-center text-slate-400 text-sm">
+              Añade Pokémon a tu equipo en la pestaña <span className="font-bold text-white">Equipo</span> para ver sus debilidades, resistencias e inmunidades.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6 w-full">
+              {/* COLUMNA 1: RESISTENTE A: */}
+              <div className="flex flex-col">
+                <h3 className="text-lg sm:text-2xl font-bold text-white mb-3">
+                  Resistente a:
+                </h3>
+                <div className="flex flex-col gap-[2px]">
+                  {tiposData.resistantRows.map(row => (
+                    <div key={row.typeId} className="flex items-stretch min-h-[38px] rounded-sm overflow-hidden">
+                      <div
+                        className="w-12 sm:w-16 shrink-0 flex items-center justify-center text-white text-sm sm:text-base font-normal select-none"
+                        style={{ backgroundColor: row.bg }}
+                      >
+                        {row.abbrev}
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-1 bg-[#23272d] px-2 overflow-x-auto min-h-[38px]">
+                        {row.pokemons.map(p => (
+                          <div
+                            key={p.memberId}
+                            className="w-10 h-[30px] flex items-center justify-center shrink-0"
+                            title={p.name}
+                          >
+                            <span
+                              style={getPokemonShowdownSpriteStyle(p.dexNum)}
+                              className="image-pixelated shrink-0"
+                              role="img"
+                              aria-label={p.name}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {tiposData.resistantRows.length === 0 && (
+                    <div className="text-xs text-slate-500 italic py-2">Ninguna resistencia</div>
+                  )}
                 </div>
-              );
-            })}
-          </div>
+              </div>
+
+              {/* COLUMNA 2: DÉBIL CONTRA: */}
+              <div className="flex flex-col">
+                <h3 className="text-lg sm:text-2xl font-bold text-white mb-3">
+                  Débil contra:
+                </h3>
+                <div className="flex flex-col gap-[2px]">
+                  {tiposData.weakRows.map(row => (
+                    <div key={row.typeId} className="flex items-stretch min-h-[38px] rounded-sm overflow-hidden">
+                      <div
+                        className="w-12 sm:w-16 shrink-0 flex items-center justify-center text-white text-sm sm:text-base font-normal select-none"
+                        style={{ backgroundColor: row.bg }}
+                      >
+                        {row.abbrev}
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-1 bg-[#23272d] px-2 overflow-x-auto min-h-[38px]">
+                        {row.pokemons.map(p => (
+                          <div
+                            key={p.memberId}
+                            className="w-10 h-[30px] flex items-center justify-center shrink-0"
+                            title={p.name}
+                          >
+                            <span
+                              style={getPokemonShowdownSpriteStyle(p.dexNum)}
+                              className="image-pixelated shrink-0"
+                              role="img"
+                              aria-label={p.name}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {tiposData.weakRows.length === 0 && (
+                    <div className="text-xs text-slate-500 italic py-2">Ninguna debilidad</div>
+                  )}
+                </div>
+              </div>
+
+              {/* COLUMNA 3: INMUNE A: (Incluye Levitación de Rotom, tipos, etc.) */}
+              <div className="flex flex-col sm:col-span-2 lg:col-span-1">
+                <h3 className="text-lg sm:text-2xl font-bold text-white mb-3">
+                  Inmune a:
+                </h3>
+                <div className="flex flex-col gap-[2px]">
+                  {tiposData.immuneRows.map(row => (
+                    <div key={row.typeId} className="flex items-stretch min-h-[38px] rounded-sm overflow-hidden">
+                      <div
+                        className="w-12 sm:w-16 shrink-0 flex items-center justify-center text-white text-sm sm:text-base font-normal select-none"
+                        style={{ backgroundColor: row.bg }}
+                      >
+                        {row.abbrev}
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-1 bg-[#23272d] px-2 overflow-x-auto min-h-[38px]">
+                        {row.pokemons.map(p => (
+                          <div
+                            key={p.memberId}
+                            className="w-10 h-[30px] flex items-center justify-center shrink-0"
+                            title={`${p.name} (Inmune a ${row.name || row.abbrev})`}
+                          >
+                            <span
+                              style={getPokemonShowdownSpriteStyle(p.dexNum)}
+                              className="image-pixelated shrink-0"
+                              role="img"
+                              aria-label={p.name}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {tiposData.immuneRows.length === 0 && (
+                    <div className="text-xs text-slate-500 italic py-2">Ninguna inmunidad</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </section>
       )}
 
@@ -1236,33 +2008,469 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
         </section>
       )}
 
-      {/* MODAL: POKEMON SELECTION SEARCH (When clicking Pokédex or Add) */}
+      {/* MODAL: POKEMON SELECTION SEARCH (Full-featured dedicated search modal with high visibility) */}
       {showChangePokemonModal && (
-        <div className="modal-backdrop z-50 fixed inset-0 bg-black/80 flex items-center justify-center p-3" onClick={() => setShowChangePokemonModal(false)}>
-          <div className="modal w-full max-w-md max-h-[85vh] flex flex-col p-4 bg-slate-950 rounded-2xl border border-slate-700 shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-800">
-              <span className="text-sm font-bold text-white">
-                Elegir Pokémon para el Slot #{activeSlot + 1}
-              </span>
+        <div
+          className="modal-backdrop z-50 fixed inset-0 bg-black/85 flex items-center justify-center p-2 sm:p-4 overflow-y-auto"
+          onClick={() => setShowChangePokemonModal(false)}
+        >
+          <div
+            className="modal w-full max-w-2xl max-h-[88vh] flex flex-col bg-slate-950 rounded-2xl border border-slate-700 shadow-2xl overflow-hidden my-auto"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-slate-900/80 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-emerald-600/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold text-xs">
+                  #{activeSlot + 1}
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-bold text-white">
+                    Elegir Pokémon para el Slot #{activeSlot + 1}
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    {currentMember.pokemonId
+                      ? `Reemplazando a ${currentMember.nombre || currentMember.pokemonId}`
+                      : 'Asignando nuevo Pokémon al equipo'}
+                  </p>
+                </div>
+              </div>
               <button
                 type="button"
                 className="icon-button"
                 onClick={() => setShowChangePokemonModal(false)}
+                aria-label="Cerrar buscador"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Sticky Search & Filter Bar */}
+            <div className="p-3 border-b border-slate-800 bg-slate-900/40 flex flex-col gap-2.5 flex-shrink-0">
+              <div className="relative flex items-center">
+                <Search size={16} className="absolute left-3 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  autoFocus
+                  value={builderSearchQuery}
+                  onChange={e => setBuilderSearchQuery(e.target.value)}
+                  placeholder="Buscar por nombre, tipo (#006, Garchomp, Fuego, etc.)..."
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-9 pr-9 py-2.5 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
+                />
+                {builderSearchQuery && (
+                  <button
+                    type="button"
+                    className="absolute right-3 p-1 rounded-full text-slate-400 hover:text-white hover:bg-slate-800"
+                    onClick={() => setBuilderSearchQuery('')}
+                    aria-label="Borrar búsqueda"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+
+              {/* Quick Filter Chips (Generations & Tiers) */}
+              <div className="flex items-center justify-between gap-2 overflow-x-auto text-[11px] font-bold">
+                <div className="flex items-center gap-1">
+                  <span className="text-slate-400 text-[10px] uppercase font-mono mr-0.5">Gen:</span>
+                  {(['all', 1, 2, 3, 4, 5] as const).map(g => (
+                    <button
+                      key={String(g)}
+                      type="button"
+                      className={`px-2 py-0.5 rounded-lg transition-colors whitespace-nowrap ${
+                        builderGenFilter === g
+                          ? 'bg-emerald-600 text-white shadow'
+                          : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
+                      }`}
+                      onClick={() => setBuilderGenFilter(g)}
+                    >
+                      {g === 'all' ? 'Todas' : `Gen ${g}`}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <span className="text-slate-400 text-[10px] uppercase font-mono mr-0.5">Tier:</span>
+                  {(['all', 'ou', 'uu', 'nu'] as const).map(t => (
+                    <button
+                      key={t}
+                      type="button"
+                      className={`px-2 py-0.5 rounded-lg transition-colors uppercase whitespace-nowrap ${
+                        builderTierFilter === t
+                          ? 'bg-indigo-600 text-white shadow'
+                          : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
+                      }`}
+                      onClick={() => setBuilderTierFilter(t)}
+                    >
+                      {t === 'all' ? 'Todas' : t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Results Count Header */}
+            <div className="px-4 py-1.5 bg-slate-950/60 border-b border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400 flex-shrink-0">
+              <span>
+                Mostrando <strong>{builderFilteredPokemon.length}</strong> Pokémon disponibles:
+              </span>
+              {builderSearchQuery && (
+                <button
+                  type="button"
+                  className="text-emerald-400 hover:underline"
+                  onClick={() => {
+                    setBuilderSearchQuery('');
+                    setBuilderGenFilter('all');
+                    setBuilderTierFilter('all');
+                  }}
+                >
+                  Restablecer filtros
+                </button>
+              )}
+            </div>
+
+            {/* Scrollable Results List */}
+            <div className="overflow-y-auto p-2 sm:p-3 flex flex-col gap-1.5 flex-1 min-h-[300px]">
+              {builderFilteredPokemon.length === 0 ? (
+                <div className="py-12 text-center flex flex-col items-center justify-center gap-2">
+                  <Search size={24} className="text-slate-600" />
+                  <p className="text-sm font-semibold text-slate-300">
+                    No se encontró ningún Pokémon para "{builderSearchQuery}".
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    Prueba con otro término de búsqueda o limpia los filtros.
+                  </p>
+                  <button
+                    type="button"
+                    className="mt-2 px-3 py-1.5 rounded-xl bg-slate-800 text-xs font-bold text-white hover:bg-slate-700"
+                    onClick={() => {
+                      setBuilderSearchQuery('');
+                      setBuilderGenFilter('all');
+                      setBuilderTierFilter('all');
+                    }}
+                  >
+                    Ver todos los Pokémon
+                  </button>
+                </div>
+              ) : (
+                builderFilteredPokemon.map(pk => {
+                  const dexNum = pk.num;
+                  const bst = pk.hp + pk.atk + pk.def + pk.spa + pk.spd + pk.spe;
+                  const isCurrent = currentMember.pokemonId.toLowerCase() === pk.id.toLowerCase();
+
+                  return (
+                    <button
+                      key={pk.id}
+                      type="button"
+                      className={`flex items-center justify-between p-2 rounded-xl transition-all text-left border ${
+                        isCurrent
+                          ? 'bg-emerald-950/40 border-emerald-500/80 shadow-sm'
+                          : 'bg-slate-900/70 hover:bg-slate-800/90 border-slate-800/80 hover:border-slate-700'
+                      } group`}
+                      onClick={() => handleSelectPokemonForSlot(activeSlot, pk.id)}
+                    >
+                      {/* Left: Sprite & Info */}
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        {/* Offline Showdown Sprite Sheet Icon */}
+                        <div className="w-10 h-[30px] flex items-center justify-center flex-shrink-0 drop-shadow-sm overflow-hidden">
+                          <span
+                            style={getPokemonShowdownSpriteStyle(dexNum)}
+                            className="image-pixelated origin-center"
+                            role="img"
+                            aria-label={pk.nombre}
+                          />
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono text-xs text-slate-400 font-semibold">
+                              #{String(dexNum).padStart(3, '0')}
+                            </span>
+                            <span className="text-sm font-bold text-white group-hover:text-emerald-300 transition-colors truncate">
+                              {pk.nombre}
+                            </span>
+                            {isCurrent && (
+                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-600 text-white font-bold">
+                                Actual
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                            <TypeBadge type={pk.tipo1} size="sm" />
+                            {pk.tipo2 && <TypeBadge type={pk.tipo2} size="sm" />}
+                            <span className="text-[10px] text-slate-500 font-mono hidden sm:inline">
+                              BST: {bst} (Vel {pk.spe})
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right: Select Action */}
+                      <div className="flex items-center gap-2 flex-shrink-0 pl-2">
+                        <span className="hidden sm:inline-block px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-800 group-hover:bg-emerald-600 text-slate-300 group-hover:text-white transition-colors">
+                          Seleccionar
+                        </span>
+                        <ChevronDown className="sm:hidden text-slate-500 -rotate-90" size={16} />
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CARGAR EN CALCULADORA (OPCIÓN ATACANTE O DEFENSOR) */}
+      {showSendToCalcModal && (
+        <div
+          className="modal-backdrop z-50 fixed inset-0 bg-black/80 flex items-center justify-center p-3 overflow-y-auto"
+          onClick={() => setShowSendToCalcModal(false)}
+        >
+          <div
+            className="modal w-full max-w-md p-4 bg-slate-950 rounded-2xl border border-slate-700 shadow-2xl flex flex-col gap-4 text-xs"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Swords size={16} className="text-emerald-400" />
+                <span className="text-sm font-bold text-white">
+                  Enviar a la Calculadora
+                </span>
+              </div>
+              <button
+                type="button"
+                className="icon-button"
+                onClick={() => setShowSendToCalcModal(false)}
               >
                 <X size={16} />
               </button>
             </div>
 
-            <PokemonSearchableSelect
-              id="builder-modal-pk-search"
-              value={currentMember.pokemonId}
-              onChange={pId => handleSelectPokemonForSlot(activeSlot, pId)}
-              pokemonList={pokemonList}
-              equipoOU={equipoOU}
-              equipoUU={equipoUU}
-              equipoNU={equipoNU}
-              placeholder="Buscar por nombre o # Pokédex..."
-            />
+            <div className="flex items-center gap-3 p-3 bg-slate-900 rounded-xl border border-slate-800">
+              <div className="w-12 h-10 flex items-center justify-center overflow-hidden flex-shrink-0 bg-slate-950 rounded-lg border border-slate-800">
+                <span
+                  style={getPokemonShowdownSpriteStyle(currentDex?.num || currentMember.pokemonId)}
+                  className="image-pixelated scale-90"
+                  role="img"
+                  aria-label={currentMember.nombre}
+                />
+              </div>
+              <div>
+                <div className="text-sm font-bold text-white">{currentMember.nombre}</div>
+                <div className="text-[11px] text-slate-400">
+                  Nivel {currentMember.level || 50} · Naturaleza {currentMember.nature} · {currentMember.item || 'Sin objeto'}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-bold text-slate-300">
+                Movimiento principal para el cálculo:
+              </label>
+              <select
+                className="w-full py-2 px-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs font-medium focus:outline-none focus:border-emerald-500"
+                value={calcModalMove}
+                onChange={e => setCalcModalMove(e.target.value)}
+              >
+                {currentMember.moves.filter(Boolean).map(m => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+                <option value="">(Sin movimiento predeterminado)</option>
+              </select>
+            </div>
+
+            <div className="text-slate-300 text-[11px]">
+              Elige el rol con el que deseas cargar a <strong>{currentMember.nombre}</strong> en la calculadora de daño:
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 pt-2">
+              <button
+                type="button"
+                className="py-3 px-4 rounded-xl font-bold text-xs sm:text-sm bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-[0.98]"
+                onClick={() => {
+                  const pk = memberToPokemon(currentMember, currentDex);
+                  onSendToCalculator(pk, 'attacker', calcModalMove || currentMember.moves[0]);
+                  setShowSendToCalcModal(false);
+                }}
+              >
+                <Swords size={16} />
+                <span>Como Atacante</span>
+              </button>
+
+              <button
+                type="button"
+                className="py-3 px-4 rounded-xl font-bold text-xs sm:text-sm bg-cyan-700 hover:bg-cyan-600 text-white flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-[0.98]"
+                onClick={() => {
+                  const pk = memberToPokemon(currentMember, currentDex);
+                  onSendToCalculator(pk, 'defender', calcModalMove || currentMember.moves[0]);
+                  setShowSendToCalcModal(false);
+                }}
+              >
+                <Shield size={16} />
+                <span>Como Defensor</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: FICHA POKÉDEX DEL POKÉMON ACTIVO */}
+      {showPokedexModal && currentDex && (
+        <div
+          className="modal-backdrop z-50 fixed inset-0 bg-black/80 flex items-center justify-center p-3 overflow-y-auto"
+          onClick={() => setShowPokedexModal(false)}
+        >
+          <div
+            className="modal w-full max-w-lg max-h-[90vh] flex flex-col p-4 bg-slate-950 rounded-2xl border border-slate-700 shadow-2xl overflow-y-auto text-xs"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <BookOpen size={17} className="text-emerald-400" />
+                <span className="text-sm font-bold text-white">
+                  Ficha Pokédex #{String(currentDex.num).padStart(3, '0')} · {currentDex.nombre}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="icon-button"
+                onClick={() => setShowPokedexModal(false)}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* HEADER: SPRITE, TYPES, GEN, BST */}
+            <div className="flex items-center justify-between p-3 bg-slate-900 rounded-xl border border-slate-800 mb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-14 h-12 flex items-center justify-center bg-slate-950 rounded-lg border border-slate-800 overflow-hidden">
+                  <span
+                    style={getPokemonShowdownSpriteStyle(currentDex.num)}
+                    className="image-pixelated scale-110"
+                    role="img"
+                    aria-label={currentDex.nombre}
+                  />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">{currentDex.nombre}</h3>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <TypeBadge type={currentDex.tipo1} size="sm" />
+                    {currentDex.tipo2 && <TypeBadge type={currentDex.tipo2} size="sm" />}
+                  </div>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-emerald-400 font-bold text-sm">
+                  BST {currentDex.hp + currentDex.atk + currentDex.def + currentDex.spa + currentDex.spd + currentDex.spe}
+                </div>
+                <div className="text-[10px] text-slate-400">Gen {currentDex.generation} · Gen 1-5</div>
+              </div>
+            </div>
+
+            {/* BASE STATS PROGRESS BARS */}
+            <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 flex flex-col gap-2 mb-3">
+              <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+                Estadísticas Base
+              </span>
+              {[
+                { key: 'hp', label: 'PS', val: currentDex.hp, color: 'bg-emerald-500' },
+                { key: 'atk', label: 'Ataque', val: currentDex.atk, color: 'bg-amber-500' },
+                { key: 'def', label: 'Defensa', val: currentDex.def, color: 'bg-orange-500' },
+                { key: 'spa', label: 'Atq. Esp.', val: currentDex.spa, color: 'bg-sky-500' },
+                { key: 'spd', label: 'Def. Esp.', val: currentDex.spd, color: 'bg-indigo-500' },
+                { key: 'spe', label: 'Velocidad', val: currentDex.spe, color: 'bg-pink-500' },
+              ].map(st => {
+                const pct = Math.min(100, Math.round((st.val / 200) * 100));
+                return (
+                  <div key={st.key} className="flex items-center gap-2 text-xs">
+                    <span className="w-16 font-semibold text-slate-400 text-[11px]">{st.label}</span>
+                    <span className="w-8 font-mono font-bold text-white text-right">{st.val}</span>
+                    <div className="flex-1 h-2 rounded-full bg-slate-800 overflow-hidden">
+                      <div className={`h-full rounded-full ${st.color}`} style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* ABILITIES WITH DESCRIPTIONS */}
+            <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 flex flex-col gap-2 mb-3">
+              <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                <Sparkles size={13} className="text-amber-400" />
+                <span>Habilidades Disponibles</span>
+              </span>
+              <div className="flex flex-col gap-1.5">
+                {currentAbilitiesWithDesc.map(ab => (
+                  <div key={ab.id} className="p-2 rounded-lg bg-slate-950 border border-slate-800 text-[11px]">
+                    <strong className="text-white font-semibold block">{ab.nombre}</strong>
+                    <span className="text-slate-400 leading-relaxed">{ab.desc}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* DEFENSIVE MATCHUPS OF THIS POKÉMON */}
+            <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 flex flex-col gap-2 mb-3">
+              <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                <Shield size={13} className="text-emerald-400" />
+                <span>Efectividad Defensiva (Gen 1-5)</span>
+              </span>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                {TYPES.map(([typeId, typeLabel]) => {
+                  const mult = getDefensiveMultiplier(currentDex.tipo1, currentDex.tipo2, typeId);
+                  const isWeak = mult > 1;
+                  const isResist = mult < 1 && mult > 0;
+                  const isImmune = mult === 0;
+
+                  return (
+                    <div
+                      key={typeId}
+                      className={`flex items-center justify-between p-1.5 rounded-lg border text-[11px] ${
+                        isWeak
+                          ? 'bg-rose-950/40 border-rose-800/80 text-rose-300'
+                          : isImmune
+                          ? 'bg-indigo-950/40 border-indigo-800/80 text-cyan-300'
+                          : isResist
+                          ? 'bg-emerald-950/40 border-emerald-800/80 text-emerald-300'
+                          : 'bg-slate-950/60 border-slate-800 text-slate-400'
+                      }`}
+                    >
+                      <TypeBadge type={typeId} size="sm" />
+                      <span className="font-mono font-bold">
+                        {mult === 0 ? '0x' : mult === 0.25 ? '¼x' : mult === 0.5 ? '½x' : mult === 2 ? '2x' : mult === 4 ? '4x' : '1x'}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* ACTION BUTTONS */}
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                className="py-2 px-4 rounded-xl font-bold text-xs bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-1.5 shadow"
+                onClick={() => {
+                  setShowPokedexModal(false);
+                  setShowSendToCalcModal(true);
+                }}
+              >
+                <Swords size={14} />
+                <span>Enviar a la Calculadora</span>
+              </button>
+
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setShowPokedexModal(false)}
+              >
+                Cerrar
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1412,6 +2620,259 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
                 type="button"
                 className="secondary"
                 onClick={() => setShowTeamsModal(false)}
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: EXPORTAR EQUIPO (Almacenamiento Interno / Google Drive / JSON / Showdown) */}
+      {showExportModal && (
+        <div
+          className="modal-backdrop z-50 fixed inset-0 bg-black/80 flex items-center justify-center p-3 overflow-y-auto"
+          onClick={() => setShowExportModal(false)}
+        >
+          <div
+            className="modal w-full max-w-lg p-5 bg-slate-950 rounded-2xl border border-slate-700 shadow-2xl flex flex-col gap-4 text-xs"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Download size={18} className="text-cyan-400" />
+                <span className="text-sm font-bold text-white">
+                  Exportar Equipo: <span className="text-cyan-300 font-extrabold">{currentTeam.name}</span>
+                </span>
+              </div>
+              <button
+                type="button"
+                className="icon-button"
+                onClick={() => setShowExportModal(false)}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Team preview mini bar */}
+            <div className="flex items-center gap-1.5 p-2 bg-slate-900 rounded-xl border border-slate-800 overflow-x-auto">
+              {currentTeam.members.map((m, idx) => {
+                const dexNum = getPokemonDexNum(m.pokemonId) || getPokemonDexNum(m.nombre);
+                return (
+                  <div
+                    key={idx}
+                    className="flex flex-col items-center justify-center p-1 rounded-lg bg-slate-950 border border-slate-800 min-w-[50px]"
+                    title={m.nombre || 'Vacío'}
+                  >
+                    <div className="w-8 h-6 flex items-center justify-center overflow-hidden">
+                      {dexNum > 0 ? (
+                        <span
+                          style={getPokemonShowdownSpriteStyle(dexNum)}
+                          className="image-pixelated scale-75 origin-center"
+                          role="img"
+                          aria-label={m.nombre}
+                        />
+                      ) : (
+                        <span className="text-slate-600 text-[10px]">-</span>
+                      )}
+                    </div>
+                    <span className="text-[9px] text-slate-300 font-bold truncate max-w-[46px] block">
+                      {m.nombre || `Slot ${idx + 1}`}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <p className="text-xs text-slate-300">
+              Elige cómo deseas exportar tu equipo. Se guardará e implementará de forma segura.
+            </p>
+
+            <div className="grid grid-cols-1 gap-2.5">
+              {/* OPCIÓN 1: ALMACENAMIENTO INTERNO */}
+              <button
+                type="button"
+                className="flex items-start gap-3 p-3 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700 hover:border-emerald-500 text-left transition-all group"
+                onClick={handleExportToInternalStorage}
+              >
+                <div className="w-10 h-10 rounded-xl bg-emerald-950/80 border border-emerald-600/80 flex items-center justify-center text-emerald-400 shrink-0 group-hover:scale-105 transition-transform">
+                  <HardDrive size={20} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-bold text-white group-hover:text-emerald-300 flex items-center gap-1.5">
+                    <span>Almacenamiento Interno (Carpeta de la App)</span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-600/30 text-emerald-300 font-normal">
+                      PokeMMO_Equipos
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    Guarda el equipo en la carpeta creada por la app en la memoria de tu dispositivo para tener acceso directo y permanente.
+                  </div>
+                </div>
+              </button>
+
+              {/* OPCIÓN 2: GOOGLE DRIVE */}
+              <button
+                type="button"
+                className="flex items-start gap-3 p-3 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700 hover:border-sky-500 text-left transition-all group"
+                onClick={handleExportToGoogleDrive}
+              >
+                <div className="w-10 h-10 rounded-xl bg-sky-950/80 border border-sky-600/80 flex items-center justify-center text-sky-400 shrink-0 group-hover:scale-105 transition-transform">
+                  <Cloud size={20} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-bold text-white group-hover:text-sky-300 flex items-center gap-1.5">
+                    <span>Exportar a Google Drive</span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-sky-600/30 text-sky-300 font-normal">
+                      Nube
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    Sube o guarda el archivo directamente en tu Google Drive para sincronizarlo o compartirlo con otros dispositivos.
+                  </div>
+                </div>
+              </button>
+
+              {/* OPCIÓN 3: DESCARGA DIRECTA JSON */}
+              <button
+                type="button"
+                className="flex items-start gap-3 p-3 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700 hover:border-cyan-500 text-left transition-all group"
+                onClick={() => {
+                  handleDirectDownloadJson();
+                  setShowExportModal(false);
+                }}
+              >
+                <div className="w-10 h-10 rounded-xl bg-cyan-950/80 border border-cyan-600/80 flex items-center justify-center text-cyan-400 shrink-0 group-hover:scale-105 transition-transform">
+                  <Download size={20} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-bold text-white group-hover:text-cyan-300">
+                    Descargar Archivo (.json)
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    Descarga directa a tu carpeta de descargas para respaldar o transferir tu equipo.
+                  </div>
+                </div>
+              </button>
+
+              {/* OPCIÓN 4: COPIAR FORMATO SHOWDOWN */}
+              <button
+                type="button"
+                className="flex items-start gap-3 p-3 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700 hover:border-amber-500 text-left transition-all group"
+                onClick={handleCopyShowdown}
+              >
+                <div className="w-10 h-10 rounded-xl bg-amber-950/80 border border-amber-600/80 flex items-center justify-center text-amber-400 shrink-0 group-hover:scale-105 transition-transform">
+                  <Copy size={20} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-bold text-white group-hover:text-amber-300">
+                    Copiar Formato PokeMMO / Showdown (.txt)
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    Copia el texto del equipo para pegarlo directamente en el juego PokeMMO o Pokémon Showdown.
+                  </div>
+                </div>
+              </button>
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setShowExportModal(false)}
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: IMPORTAR EQUIPO (Archivo o texto Showdown) */}
+      {showImportModal && (
+        <div
+          className="modal-backdrop z-50 fixed inset-0 bg-black/80 flex items-center justify-center p-3 overflow-y-auto"
+          onClick={() => setShowImportModal(false)}
+        >
+          <div
+            className="modal w-full max-w-lg p-5 bg-slate-950 rounded-2xl border border-slate-700 shadow-2xl flex flex-col gap-4 text-xs"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Upload size={18} className="text-emerald-400" />
+                <span className="text-sm font-bold text-white">
+                  Importar e Implementar Equipo
+                </span>
+              </div>
+              <button
+                type="button"
+                className="icon-button"
+                onClick={() => setShowImportModal(false)}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300">
+              Carga un archivo de tu dispositivo o pega el texto en formato Showdown/PokeMMO. El equipo se implementará y activará inmediatamente en la app.
+            </p>
+
+            {/* BOTÓN PARA SUBIR ARCHIVO */}
+            <div className="p-4 rounded-xl border border-dashed border-emerald-500/50 bg-emerald-950/20 flex flex-col items-center justify-center gap-2 text-center">
+              <Upload size={24} className="text-emerald-400" />
+              <div className="text-xs font-bold text-white">
+                Cargar Archivo desde tu Dispositivo
+              </div>
+              <div className="text-[11px] text-slate-400">
+                Formatos compatibles: .json, .txt, .poketeam
+              </div>
+              <button
+                type="button"
+                className="mt-1 py-2 px-4 rounded-xl font-bold text-xs bg-emerald-600 hover:bg-emerald-500 text-white shadow flex items-center gap-2"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <FolderOpen size={14} />
+                <span>Explorar Archivos</span>
+              </button>
+            </div>
+
+            {/* O PEGAR TEXTO */}
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-bold text-slate-300 flex items-center justify-between">
+                <span>O pega el texto del equipo (Showdown / PokeMMO):</span>
+              </label>
+              <textarea
+                rows={5}
+                className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-200 font-mono text-xs focus:outline-none focus:border-emerald-500"
+                placeholder={`Rotom-Wash @ Leftovers\nAbility: Levitate\nEVs: 252 HP / 252 Def / 4 SpD\nBold Nature\n- Volt Switch\n- Hydro Pump\n- Will-O-Wisp\n- Pain Split`}
+                value={importPasteText}
+                onChange={e => setImportPasteText(e.target.value)}
+              />
+              <button
+                type="button"
+                disabled={!importPasteText.trim()}
+                className={`py-2 px-4 rounded-xl font-bold text-xs shadow flex items-center justify-center gap-2 transition-all ${
+                  importPasteText.trim()
+                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer'
+                    : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                }`}
+                onClick={() => {
+                  handleImportContent(importPasteText, 'Equipo Pegado');
+                  setImportPasteText('');
+                  setShowImportModal(false);
+                }}
+              >
+                <Check size={14} />
+                <span>Implementar Equipo Pegado</span>
+              </button>
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setShowImportModal(false)}
               >
                 Cerrar
               </button>

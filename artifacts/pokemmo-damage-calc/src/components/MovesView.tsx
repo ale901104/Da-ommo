@@ -596,9 +596,26 @@ export const MovesView: React.FC<MovesViewProps> = ({
 
             {/* MODAL BODY */}
             <div className="p-4 overflow-y-auto flex-1 flex flex-col gap-4 text-xs">
-              {/* DESCRIPTION */}
-              <div className="text-slate-200 leading-relaxed bg-slate-900/60 p-3 rounded-xl border border-slate-800 text-xs">
-                {detailMove.descripcion || 'Sin descripción detallada.'}
+              {/* DESCRIPTION & COMPLETE EFFECT */}
+              <div className="flex flex-col gap-2 bg-slate-900/60 p-3.5 rounded-xl border border-slate-800 text-xs">
+                <div className="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Sparkles size={13} />
+                  <span>Efecto en Combate</span>
+                </div>
+                <p className="text-slate-100 leading-relaxed text-xs">
+                  {detailMove.descripcion || 'Sin descripción detallada.'}
+                </p>
+                {detailMove.competitiveDesc && detailMove.competitiveDesc !== detailMove.descripcion && (
+                  <div className="mt-1 pt-2 border-t border-slate-800/80 text-[11px] text-slate-300 leading-relaxed">
+                    <strong className="text-emerald-400 font-semibold block mb-0.5">Mecánica Competitiva (Showdown / PokéMMO):</strong>
+                    <span>{detailMove.competitiveDesc}</span>
+                  </div>
+                )}
+                {detailMove.priority ? (
+                  <div className="text-[11px] text-amber-300 font-medium">
+                    ⚡ Prioridad de ataque: <span className="font-bold">+{detailMove.priority}</span> (actúa antes que movimientos estándar).
+                  </div>
+                ) : null}
               </div>
 
               {/* STAT SUMMARY TABLE (Power, Accuracy, PP, Effect Chance) */}

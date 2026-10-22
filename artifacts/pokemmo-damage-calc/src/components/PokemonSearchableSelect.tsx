@@ -2,6 +2,7 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Check, Search, X } from 'lucide-react';
 import { allGen1To5Pokemon, rawDexList } from '../dex';
 import { type Pokemon } from '../pokemon-constants';
+import localSheetUrl from '../assets/pokemonicons-sheet.png';
 
 interface PokemonSearchableSelectProps {
   id?: string;
@@ -39,12 +40,12 @@ export function getPokemonDexNum(target?: unknown, fallbackNum?: number): number
     const obj = target as Record<string, unknown>;
     if (typeof obj.num === 'number' && obj.num > 0 && obj.num <= 649) return obj.num;
     if (typeof obj.dexNum === 'number' && obj.dexNum > 0 && obj.dexNum <= 649) return obj.dexNum;
-    if (typeof obj.pokemonId === 'string' && obj.pokemonId) {
-      const n = getPokemonDexNum(obj.pokemonId);
-      if (n > 0) return n;
-    }
     if (typeof obj.nombre === 'string' && obj.nombre) {
       const n = getPokemonDexNum(obj.nombre);
+      if (n > 0) return n;
+    }
+    if (typeof obj.pokemonId === 'string' && obj.pokemonId) {
+      const n = getPokemonDexNum(obj.pokemonId);
       if (n > 0) return n;
     }
     if (typeof obj.id === 'string' && obj.id) {
@@ -58,8 +59,10 @@ export function getPokemonDexNum(target?: unknown, fallbackNum?: number): number
     const parsed = parseInt(clean, 10);
     if (!isNaN(parsed) && parsed > 0 && parsed <= 649) return parsed;
 
-    // Check if target has a suffix like "garchomp-1234abc" or "pk-garchomp"
-    const bareSlug = clean.replace(/^pk-/, '').split('-')[0].replace(/[^a-z0-9]/g, '');
+    // Check if target is a clean name or has prefixes like "pk-"
+    const cleanNoPk = clean.replace(/^pk-/, '');
+    const bareSlug = cleanNoPk.split('-')[0].replace(/[^a-z0-9]/g, '');
+    const norm = clean.replace(/[^a-z0-9]/g, '');
 
     const match = rawDexList.find(d => {
       const dClean = d.id.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -67,10 +70,12 @@ export function getPokemonDexNum(target?: unknown, fallbackNum?: number): number
       return (
         d.id.toLowerCase() === clean ||
         d.nombre.toLowerCase() === clean ||
+        d.id.toLowerCase() === cleanNoPk ||
+        d.nombre.toLowerCase() === cleanNoPk ||
+        dClean === norm ||
+        dNom === norm ||
         dClean === bareSlug ||
-        dNom === bareSlug ||
-        dClean === clean.replace(/[^a-z0-9]/g, '') ||
-        dNom === clean.replace(/[^a-z0-9]/g, '')
+        dNom === bareSlug
       );
     });
     if (match) return match.num;
@@ -86,71 +91,53 @@ export function getPokemonSpriteUrl(target?: unknown, fallbackNum?: number): str
   return '';
 }
 
-// 100% Offline Pokémon Showdown icon sprite generator from local /pokemonicons-sheet.png
+// 100% Offline Pokémon Showdown icon sprite generator from local sheet asset
 export function getPokemonShowdownSpriteStyle(target?: unknown, fallbackNum?: number): React.CSSProperties {
   const dexNum = getPokemonDexNum(target, fallbackNum);
   if (dexNum <= 0 || dexNum > 649) return {};
   const left = (dexNum % 12) * 40;
   const top = Math.floor(dexNum / 12) * 30;
-  const baseUrl = import.meta.env.BASE_URL || '/';
-  const sheetUrl = baseUrl.endsWith('/') ? `${baseUrl}pokemonicons-sheet.png` : `${baseUrl}/pokemonicons-sheet.png`;
+  const sheetSrc = localSheetUrl || '/pokemonicons-sheet.png';
   return {
     display: 'inline-block',
     width: '40px',
     height: '30px',
-    backgroundImage: `url("${sheetUrl}")`,
+    backgroundImage: `url("${sheetSrc}")`,
     backgroundRepeat: 'no-repeat',
     backgroundPosition: `-${left}px -${top}px`,
     imageRendering: 'pixelated',
   };
 }
 
-// Reusable crisp Pokemon Sprite with automatic fallback
+// Reusable 100% offline crisp Pokemon Sprite (No network request needed)
 export const PokemonSprite: React.FC<{
   target?: unknown;
   fallbackNum?: number;
   name?: string;
   className?: string;
   size?: 'xs' | 'sm' | 'md' | 'lg';
-}> = ({ target, name = 'Pokemon', className = '', size = 'md' }) => {
-  const dexNum = getPokemonDexNum(target);
-  const sizeClasses =
-    size === 'xs'
-      ? 'w-5 h-5'
-      : size === 'sm'
-      ? 'w-7 h-7'
-      : size === 'lg'
-      ? 'w-14 h-14'
-      : 'w-10 h-10';
-
+}> = ({ target, fallbackNum, name = 'Pokemon', className = '', size = 'md' }) => {
+  const dexNum = getPokemonDexNum(target, fallbackNum);
   if (!dexNum) {
     return (
-      <div className={`${sizeClasses} flex items-center justify-center text-slate-600 text-xs ${className}`}>
+      <div className={`flex items-center justify-center text-slate-600 text-xs ${className}`}>
         —
       </div>
     );
   }
 
-  const spriteUrl = getPokemonSpriteUrl(dexNum);
+  const scale = size === 'xs' ? 'scale-[0.55]' : size === 'sm' ? 'scale-75' : size === 'lg' ? 'scale-125' : 'scale-100';
+  const boxSize = size === 'xs' ? 'w-6 h-5' : size === 'sm' ? 'w-8 h-6' : size === 'lg' ? 'w-14 h-10' : 'w-10 h-[30px]';
 
   return (
-    <img
-      src={spriteUrl}
-      alt={name}
-      className={`${sizeClasses} object-contain drop-shadow-sm flex-shrink-0 ${className}`}
-      loading="lazy"
-      onError={e => {
-        const targetEl = e.currentTarget;
-        targetEl.style.display = 'none';
-        const parent = targetEl.parentElement;
-        if (parent && !parent.querySelector('.sheet-fallback')) {
-          const fallback = document.createElement('div');
-          fallback.className = 'sheet-fallback';
-          Object.assign(fallback.style, getPokemonShowdownSpriteStyle(dexNum));
-          parent.appendChild(fallback);
-        }
-      }}
-    />
+    <div className={`${boxSize} flex items-center justify-center flex-shrink-0 overflow-hidden ${className}`}>
+      <span
+        style={getPokemonShowdownSpriteStyle(dexNum)}
+        className={`image-pixelated origin-center ${scale}`}
+        role="img"
+        aria-label={name}
+      />
+    </div>
   );
 };
 

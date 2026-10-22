@@ -6,6 +6,7 @@
       "name": "workspace",
       "dependencies": {
         "@replit/connectors-sdk": "^0.4.3",
+        "workbox-window": "^7.4.1",
       },
       "devDependencies": {
         "prettier": "^3.9.6",
