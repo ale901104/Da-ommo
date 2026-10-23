@@ -668,6 +668,17 @@
   color: #9ca3af;
   font-weight: 500;
 }
+.pokemon-search-input.has-showdown-icon {
+  padding-left: 6px !important;
+  padding-right: 22px !important;
+  font-weight: 700 !important;
+}
+@media (max-width: 480px) {
+  .pokemon-search-input.has-showdown-icon {
+    padding-left: 4px !important;
+    padding-right: 18px !important;
+  }
+}
 
 .pokemon-search-clear-right {
   position: absolute;
@@ -1422,7 +1433,7 @@
 }
 .speed-row {
   display: grid;
-  grid-template-columns: 80px 1fr 50px;
+  grid-template-columns: minmax(75px, max-content) 1fr 50px;
   align-items: center;
   gap: 8px;
   font-size: 11px;
@@ -1432,8 +1443,6 @@
   font-weight: 700;
   color: #294a53;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .dark .speed-name {
   color: #d8ece8;

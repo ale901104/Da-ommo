@@ -91,12 +91,68 @@ export function getPokemonSpriteUrl(target?: unknown, fallbackNum?: number): str
   return '';
 }
 
+// Alternate form icon indexes on Pokemon Showdown pokemonicons-sheet.png
+export const POKEMON_FORM_ICON_INDEXES: Record<string, number> = {
+  // Rotom Appliance Forms
+  rotomfan: 1080,
+  rotomfrost: 1081,
+  rotomheat: 1082,
+  rotommow: 1083,
+  rotomwash: 1084,
+
+  // Other Gen 1-5 alternate forms
+  castformrainy: 1067,
+  castformsnowy: 1068,
+  castformsunny: 1069,
+  deoxysattack: 1070,
+  deoxysdefense: 1071,
+  deoxysspeed: 1072,
+  wormadamsandy: 1075,
+  wormadamtrash: 1076,
+  giratinaorigin: 1085,
+  shayminsky: 1086,
+  basculinbluestriped: 1088,
+  darmanitanzen: 1089,
+  tornadustherian: 1098,
+  thundurustherian: 1099,
+  landorustherian: 1100,
+  kyuremblack: 1101,
+  kyuremwhite: 1102,
+  keldeoresolute: 1103,
+  meloettapirouette: 1104,
+};
+
+export function getPokemonIconIndex(target?: unknown, fallbackNum?: number): number {
+  if (target !== null && target !== undefined) {
+    let clean = '';
+    if (typeof target === 'string') {
+      clean = target.toLowerCase().replace(/^pk-/, '').replace(/[^a-z0-9]/g, '');
+    } else if (typeof target === 'object') {
+      const obj = target as Record<string, unknown>;
+      const idStr = typeof obj.id === 'string' ? obj.id : '';
+      const nameStr = typeof obj.nombre === 'string' ? obj.nombre : (typeof obj.name === 'string' ? obj.name : '');
+      const pkIdStr = typeof obj.pokemonId === 'string' ? obj.pokemonId : '';
+      clean = (idStr || pkIdStr || nameStr).toLowerCase().replace(/^pk-/, '').replace(/[^a-z0-9]/g, '');
+    }
+    if (clean && POKEMON_FORM_ICON_INDEXES[clean]) {
+      return POKEMON_FORM_ICON_INDEXES[clean];
+    }
+  }
+
+  // If a number was passed directly and it's already a high form index (> 649 and <= 1640), preserve it
+  if (typeof target === 'number' && target > 649 && target <= 1640) {
+    return target;
+  }
+
+  return getPokemonDexNum(target, fallbackNum);
+}
+
 // 100% Offline Pokémon Showdown icon sprite generator from local sheet asset
 export function getPokemonShowdownSpriteStyle(target?: unknown, fallbackNum?: number): React.CSSProperties {
-  const dexNum = getPokemonDexNum(target, fallbackNum);
-  if (dexNum <= 0 || dexNum > 649) return {};
-  const left = (dexNum % 12) * 40;
-  const top = Math.floor(dexNum / 12) * 30;
+  const iconIndex = getPokemonIconIndex(target, fallbackNum);
+  if (iconIndex <= 0 || iconIndex > 1640) return {};
+  const left = (iconIndex % 12) * 40;
+  const top = Math.floor(iconIndex / 12) * 30;
   const sheetSrc = localSheetUrl || '/pokemonicons-sheet.png';
   return {
     display: 'inline-block',
@@ -367,7 +423,7 @@ export const PokemonSearchableSelect: React.FC<PokemonSearchableSelectProps> = (
         {selectedPokemon && !isOpen && getPokemonDexNum(selectedPokemon) > 0 ? (
           <span
             className="pokemon-search-icon-showdown flex-shrink-0"
-            style={getPokemonShowdownSpriteStyle(getPokemonDexNum(selectedPokemon))}
+            style={getPokemonShowdownSpriteStyle(selectedPokemon)}
             role="img"
             aria-hidden="true"
           />
@@ -383,14 +439,27 @@ export const PokemonSearchableSelect: React.FC<PokemonSearchableSelectProps> = (
           autoComplete="off"
           autoCorrect="off"
           spellCheck={false}
-          className="pokemon-search-input"
+          className={`pokemon-search-input ${selectedPokemon && !isOpen ? 'has-showdown-icon' : ''}`}
           data-testid={dataTestId}
           aria-label={label}
           aria-expanded={isOpen}
           aria-autocomplete="list"
           role="combobox"
+          title={selectedPokemon?.nombre || inputText}
           placeholder={selectedPokemon?.nombre || placeholder}
           value={inputText}
+          style={
+            selectedPokemon && !isOpen
+              ? {
+                  fontSize:
+                    inputText.length > 15
+                      ? '11px'
+                      : inputText.length > 11
+                      ? '12px'
+                      : '13px',
+                }
+              : undefined
+          }
           onFocus={e => {
             setIsOpen(true);
             e.target.select();
@@ -448,7 +517,7 @@ export const PokemonSearchableSelect: React.FC<PokemonSearchableSelectProps> = (
                     {dexNum > 0 ? (
                       <span
                         className="pokemon-dropdown-icon"
-                        style={getPokemonShowdownSpriteStyle(dexNum)}
+                        style={getPokemonShowdownSpriteStyle(pk)}
                         role="img"
                         aria-label={pk.nombre}
                       />

@@ -206,7 +206,7 @@ function normalizePokemon(value: unknown): Pokemon {
 
   return {
     id: typeof row.id === 'string' ? row.id : `pk-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    nombre: typeof row.nombre === 'string' ? row.nombre.slice(0, 24) : 'Pokémon',
+    nombre: typeof row.nombre === 'string' ? row.nombre : 'Pokémon',
     tier,
     tipo1: typeof row.tipo1 === 'string' && TYPES.some(([id]) => id === row.tipo1) ? row.tipo1 : 'normal',
     tipo2: typeof row.tipo2 === 'string' && TYPES.some(([id]) => id === row.tipo2) ? row.tipo2 : '',
@@ -1687,8 +1687,11 @@ function App() {
               {attacker && (
                 <div className="combatant-col">
                   <div className="combatant-col-head">
-                    <div className="flex items-center gap-1.5">
-                      <span className="combatant-role-badge">Atacante</span>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="combatant-role-badge flex-shrink-0">Atacante</span>
+                      <span className="font-bold text-xs text-slate-800 dark:text-slate-100" title={attacker.nombre}>
+                        {attacker.nombre}
+                      </span>
                     </div>
                     <div className="combatant-level-stepper">
                       <button
@@ -1904,8 +1907,11 @@ function App() {
               {defender && (
                 <div className="combatant-col def">
                   <div className="combatant-col-head">
-                    <div className="flex items-center gap-1.5">
-                      <span className="combatant-role-badge def">Defensor</span>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="combatant-role-badge def flex-shrink-0">Defensor</span>
+                      <span className="font-bold text-xs text-slate-800 dark:text-slate-100" title={defender.nombre}>
+                        {defender.nombre}
+                      </span>
                     </div>
                     <div className="combatant-level-stepper">
                       <button
@@ -2712,12 +2718,25 @@ function App() {
         >
           <nav className="drawer" aria-label="Navegación">
             <div className="drawer-head">
-              <div>
-                <div className="brand-kicker">PokéMMO · FIELD KIT</div>
-                <div className="drawer-title">Tu espacio de batalla</div>
+              <div className="flex-1 pr-2">
+                <div
+                  className="text-xl sm:text-2xl font-black tracking-tight leading-tight flex items-baseline flex-wrap gap-1"
+                  style={{
+                    color: '#10b981',
+                    textShadow: '0 0 16px rgba(16, 185, 129, 0.4), 0 1px 2px rgba(0, 0, 0, 0.6)',
+                  }}
+                >
+                  <span>Pokemon Team Builder</span>
+                  <span className="text-xs sm:text-sm font-semibold opacity-85 text-emerald-300">
+                    v 1.0
+                  </span>
+                </div>
+                <div className="text-xs text-emerald-400/90 font-semibold mt-1 leading-snug">
+                  La victoria esta en tus manos
+                </div>
               </div>
               <button
-                className="icon-button"
+                className="icon-button flex-shrink-0"
                 aria-label="Cerrar menú"
                 data-testid="button-close-menu"
                 onClick={() => setDrawer(false)}
@@ -2752,13 +2771,6 @@ function App() {
                   </button>
                 );
               })}
-            </div>
-
-            <div className="drawer-note mt-6">
-              <strong>
-                <CircleHelp size={12} style={{ verticalAlign: "-2px", marginRight: 5 }} /> PokéMMO 100% Offline
-              </strong>
-              Todos tus Pokémon, movimientos y equipos se guardan localmente en tu dispositivo. Listo para usar sin conexión.
             </div>
           </nav>
         </div>

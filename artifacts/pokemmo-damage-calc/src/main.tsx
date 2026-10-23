@@ -6,8 +6,8 @@ import { ErrorBoundary } from '@/components/error-boundary';
 
 import './index.css';
 
-// Register PWA service worker for 100% offline functionality
-if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+// Register PWA service worker for 100% offline functionality in production
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator && import.meta.env.PROD) {
   registerSW({
     immediate: true,
     onNeedRefresh() {

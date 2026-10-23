@@ -23,6 +23,12 @@ import {
   TYPES,
 } from '../pokemon-constants';
 import { getPokemonShowdownSpriteStyle } from './PokemonSearchableSelect';
+import {
+  TypeSelectModal,
+  getPokeTypeColor,
+  getPokeTypeName,
+} from './TypeSelectModal';
+import { PokemonAnimatedSprite } from './PokemonAnimatedSprite';
 
 interface DexGeneralModalProps {
   isOpen: boolean;
@@ -52,7 +58,9 @@ export const DexGeneralModal: React.FC<DexGeneralModalProps> = ({
   equipoNU,
 }) => {
   const [search, setSearch] = useState('');
-  const [selectedType, setSelectedType] = useState<string>('all');
+  const [selectedType1, setSelectedType1] = useState<string>('all');
+  const [selectedType2, setSelectedType2] = useState<string>('all');
+  const [activeModalSlot, setActiveModalSlot] = useState<1 | 2 | null>(null);
   const [sortBy, setSortBy] = useState<SortOption>('num-asc');
   const [page, setPage] = useState(1);
   const [expandedPkId, setExpandedPkId] = useState<string | null>(null);
@@ -61,9 +69,28 @@ export const DexGeneralModal: React.FC<DexGeneralModalProps> = ({
   const filteredList = useMemo(() => {
     let result = rawDexList;
 
-    // Filter by Type
-    if (selectedType !== 'all') {
-      result = result.filter(p => p.tipo1 === selectedType || p.tipo2 === selectedType);
+    // Filter by Dual Type (Slot 1 and Slot 2)
+    const hasType1 = selectedType1 !== 'all';
+    const hasType2 = selectedType2 !== 'all';
+
+    if (hasType1 && hasType2) {
+      if (selectedType1 === selectedType2) {
+        // Mono-type
+        result = result.filter(
+          p => p.tipo1 === selectedType1 && (!p.tipo2 || p.tipo2 === selectedType1)
+        );
+      } else {
+        // Dual-type combination
+        result = result.filter(
+          p =>
+            (p.tipo1 === selectedType1 && p.tipo2 === selectedType2) ||
+            (p.tipo1 === selectedType2 && p.tipo2 === selectedType1)
+        );
+      }
+    } else if (hasType1) {
+      result = result.filter(p => p.tipo1 === selectedType1 || p.tipo2 === selectedType1);
+    } else if (hasType2) {
+      result = result.filter(p => p.tipo1 === selectedType2 || p.tipo2 === selectedType2);
     }
 
     // Filter by Search Query (name, number, abilities)
@@ -108,12 +135,12 @@ export const DexGeneralModal: React.FC<DexGeneralModalProps> = ({
           return a.num - b.num;
       }
     });
-  }, [selectedType, search, sortBy]);
+  }, [selectedType1, selectedType2, search, sortBy]);
 
   // Reset page when filter changes
   React.useEffect(() => {
     setPage(1);
-  }, [search, selectedType, sortBy]);
+  }, [search, selectedType1, selectedType2, sortBy]);
 
   const totalPages = Math.max(1, Math.ceil(filteredList.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -208,24 +235,85 @@ export const DexGeneralModal: React.FC<DexGeneralModalProps> = ({
               )}
             </div>
 
-            <div className="dex-filters-row">
-              {/* Type selector (no fairy) */}
-              <div className="dex-filter-item">
-                <label htmlFor="dex-type-filter">Tipo:</label>
-                <select
-                  id="dex-type-filter"
-                  value={selectedType}
-                  onChange={e => setSelectedType(e.target.value)}
-                  className="dex-select"
+            {/* TWO TYPE SELECTION BUTTONS (MATCHING POKETYPE REFERENCE) */}
+            <div className="flex items-center gap-2 mb-2">
+              <button
+                type="button"
+                onClick={() => setActiveModalSlot(1)}
+                style={
+                  selectedType1 !== 'all'
+                    ? {
+                        backgroundColor: getPokeTypeColor(selectedType1),
+                        borderColor: 'rgba(255, 255, 255, 0.4)',
+                      }
+                    : undefined
+                }
+                className={`flex-1 h-9 px-3 rounded-lg flex items-center justify-between text-xs font-bold border transition-all active:scale-[0.98] ${
+                  selectedType1 !== 'all'
+                    ? 'text-white shadow-sm'
+                    : 'bg-slate-800/80 hover:bg-slate-800 border-slate-700/60 text-slate-300'
+                }`}
+              >
+                <span
+                  style={
+                    selectedType1 !== 'all'
+                      ? { textShadow: '0 1px 2px rgba(0,0,0,0.7)' }
+                      : undefined
+                  }
+                  className="truncate"
                 >
-                  <option value="all">Todos los tipos</option>
-                  {TYPES.map(([id, label]) => (
-                    <option key={id} value={id}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                  {selectedType1 !== 'all' ? getPokeTypeName(selectedType1) : 'Tipo 1'}
+                </span>
+                <span className="text-white/80 text-sm font-bold ml-1">»</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveModalSlot(2)}
+                style={
+                  selectedType2 !== 'all'
+                    ? {
+                        backgroundColor: getPokeTypeColor(selectedType2),
+                        borderColor: 'rgba(255, 255, 255, 0.4)',
+                      }
+                    : undefined
+                }
+                className={`flex-1 h-9 px-3 rounded-lg flex items-center justify-between text-xs font-bold border transition-all active:scale-[0.98] ${
+                  selectedType2 !== 'all'
+                    ? 'text-white shadow-sm'
+                    : 'bg-slate-800/80 hover:bg-slate-800 border-slate-700/60 text-slate-300'
+                }`}
+              >
+                <span
+                  style={
+                    selectedType2 !== 'all'
+                      ? { textShadow: '0 1px 2px rgba(0,0,0,0.7)' }
+                      : undefined
+                  }
+                  className="truncate"
+                >
+                  {selectedType2 !== 'all' ? getPokeTypeName(selectedType2) : 'Tipo 2'}
+                </span>
+                <span className="text-white/80 text-sm font-bold ml-1">»</span>
+              </button>
+
+              {(selectedType1 !== 'all' || selectedType2 !== 'all') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedType1('all');
+                    setSelectedType2('all');
+                    setPage(1);
+                  }}
+                  className="px-2 py-1 text-[11px] text-amber-400 hover:text-amber-300 underline cursor-pointer"
+                  title="Restablecer filtros de tipo"
+                >
+                  Limpiar
+                </button>
+              )}
+            </div>
+
+            <div className="dex-filters-row">
 
               {/* Sort selector */}
               <div className="dex-filter-item">
@@ -323,14 +411,13 @@ export const DexGeneralModal: React.FC<DexGeneralModalProps> = ({
 
                   {/* Sprite & Identity */}
                   <div className="dex-card-identity">
-                    <div className="dex-card-sprite-wrap">
-                      <span
-                        style={getPokemonShowdownSpriteStyle(rawPk.num)}
-                        className="image-pixelated inline-block"
-                        role="img"
-                        aria-label={rawPk.nombre}
-                      />
-                    </div>
+                    <PokemonAnimatedSprite
+                      num={rawPk.num}
+                      name={rawPk.nombre}
+                      pokemonId={rawPk.id}
+                      type={rawPk.tipo1}
+                      size="md"
+                    />
                     <div className="dex-card-info">
                       <strong className="dex-card-name">{rawPk.nombre}</strong>
                       <div className="dex-card-types">
@@ -484,6 +571,22 @@ export const DexGeneralModal: React.FC<DexGeneralModalProps> = ({
             </div>
           </div>
         )}
+
+        {/* TYPE SELECTION MODAL */}
+        <TypeSelectModal
+          isOpen={activeModalSlot !== null}
+          onClose={() => setActiveModalSlot(null)}
+          currentType={activeModalSlot === 1 ? selectedType1 : selectedType2}
+          slotTitle={activeModalSlot === 1 ? 'Seleccionar Tipo 1' : 'Seleccionar Tipo 2'}
+          onSelectType={typeId => {
+            if (activeModalSlot === 1) {
+              setSelectedType1(typeId);
+            } else if (activeModalSlot === 2) {
+              setSelectedType2(typeId);
+            }
+            setPage(1);
+          }}
+        />
       </div>
     </div>
   );

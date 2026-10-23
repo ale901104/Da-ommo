@@ -1,16 +1,25 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertCircle,
+  Award,
   BookOpen,
+  Bot,
+  Brain,
   Check,
   ChevronDown,
+  ChevronUp,
   Cloud,
   Copy,
   Download,
   Edit2,
+  ExternalLink,
   FileSpreadsheet,
   FileText,
   FolderOpen,
   HardDrive,
+  Key,
+  Loader2,
+  MessageSquare,
   Plus,
   RotateCcw,
   Save,
@@ -48,6 +57,13 @@ import {
   getPokemonShowdownSpriteStyle,
   PokemonSearchableSelect,
 } from './PokemonSearchableSelect';
+import {
+  AI_PROVIDERS,
+  STORAGE_SELECTED_PROVIDER,
+  STORAGE_API_KEY,
+  type AiProvider,
+} from './SettingsView';
+import { generateLocalCompetitiveAiAnalysis } from '../lib/team-ai-analyzer';
 
 export interface BuilderMember {
   id: string; // unique slot ID (slot-1 ... slot-6)
@@ -67,6 +83,7 @@ export interface SavedTeam {
   name: string;
   updatedAt: number;
   members: BuilderMember[];
+  strategyNotes?: string;
 }
 
 interface TeamBuilderViewProps {
@@ -119,12 +136,13 @@ function createEmptyMember(slotIndex: number): BuilderMember {
   };
 }
 
-function createDefaultTeam(name = 'Equipo 1'): SavedTeam {
+function createDefaultTeam(name = 'Equipo 1', strategyNotes = ''): SavedTeam {
   return {
     id: `team-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     name,
     updatedAt: Date.now(),
     members: Array.from({ length: 6 }, (_, i) => createEmptyMember(i)),
+    strategyNotes,
   };
 }
 
@@ -585,6 +603,49 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
   const [importPasteText, setImportPasteText] = useState<string>('');
 
+  // AI Consultation states
+  const [activeAiProvider, setActiveAiProvider] = useState<AiProvider>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_SELECTED_PROVIDER);
+      if (stored === 'gemini' || stored === 'openai' || stored === 'groq') return stored;
+    } catch {}
+    return 'gemini';
+  });
+  const [promptProvider, setPromptProvider] = useState<AiProvider>('gemini');
+  const [showAiModal, setShowAiModal] = useState<boolean>(false);
+  const [isAiLoading, setIsAiLoading] = useState<boolean>(false);
+  const [aiAnalysisResult, setAiAnalysisResult] = useState<string>('');
+  const [aiError, setAiError] = useState<string>('');
+  const [showApiKeyPrompt, setShowApiKeyPrompt] = useState<boolean>(false);
+  const [promptApiKeyInput, setPromptApiKeyInput] = useState<string>('');
+  const [isStrategyCollapsed, setIsStrategyCollapsed] = useState<boolean>(false);
+  const [hasConfiguredApiKey, setHasConfiguredApiKey] = useState<boolean>(() => {
+    try {
+      return Boolean(
+        localStorage.getItem(STORAGE_API_KEY) || localStorage.getItem('gemini_api_key')
+      );
+    } catch {
+      return false;
+    }
+  });
+
+  // Sync active AI provider and API key status with local storage
+  useEffect(() => {
+    const syncAiConfig = () => {
+      try {
+        const storedProvider = localStorage.getItem(STORAGE_SELECTED_PROVIDER) as AiProvider;
+        if (storedProvider === 'gemini' || storedProvider === 'openai' || storedProvider === 'groq') {
+          setActiveAiProvider(storedProvider);
+        }
+        setHasConfiguredApiKey(
+          Boolean(localStorage.getItem(STORAGE_API_KEY) || localStorage.getItem('gemini_api_key'))
+        );
+      } catch {}
+    };
+    window.addEventListener('storage', syncAiConfig);
+    return () => window.removeEventListener('storage', syncAiConfig);
+  }, []);
+
   const openChangePokemonModal = () => {
     setBuilderSearchQuery('');
     setBuilderGenFilter('all');
@@ -680,7 +741,7 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
       abbrev: string;
       name: string;
       bg: string;
-      pokemons: { memberId: string; name: string; dexNum: number }[];
+      pokemons: { memberId: string; name: string; dexNum: number; pokemonId: string }[];
     }[] = [];
 
     const weakRows: {
@@ -688,7 +749,7 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
       abbrev: string;
       name: string;
       bg: string;
-      pokemons: { memberId: string; name: string; dexNum: number }[];
+      pokemons: { memberId: string; name: string; dexNum: number; pokemonId: string }[];
     }[] = [];
 
     const immuneRows: {
@@ -696,14 +757,14 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
       abbrev: string;
       name: string;
       bg: string;
-      pokemons: { memberId: string; name: string; dexNum: number }[];
+      pokemons: { memberId: string; name: string; dexNum: number; pokemonId: string }[];
     }[] = [];
 
     for (const atkTypeId of POKETYPE_ORDER) {
       const pInfo = POKETYPE_MAP[atkTypeId] || { abbrev: atkTypeId.slice(0, 4), bg: '#555', name: atkTypeId };
-      const resPks: { memberId: string; name: string; dexNum: number }[] = [];
-      const weakPks: { memberId: string; name: string; dexNum: number }[] = [];
-      const immunePks: { memberId: string; name: string; dexNum: number }[] = [];
+      const resPks: { memberId: string; name: string; dexNum: number; pokemonId: string }[] = [];
+      const weakPks: { memberId: string; name: string; dexNum: number; pokemonId: string }[] = [];
+      const immunePks: { memberId: string; name: string; dexNum: number; pokemonId: string }[] = [];
 
       for (const m of filledMembers) {
         const dex = getDexForMember(m);
@@ -717,12 +778,13 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
             dex.abilities
           );
           const dexNum = dex.num || getPokemonDexNum(m.pokemonId) || getPokemonDexNum(m.nombre);
+          const pId = m.pokemonId || dex.id;
           if (mult === 0) {
-            immunePks.push({ memberId: m.id, name: m.nombre || dex.nombre, dexNum });
+            immunePks.push({ memberId: m.id, name: m.nombre || dex.nombre, dexNum, pokemonId: pId });
           } else if (mult < 1 && mult > 0) {
-            resPks.push({ memberId: m.id, name: m.nombre || dex.nombre, dexNum });
+            resPks.push({ memberId: m.id, name: m.nombre || dex.nombre, dexNum, pokemonId: pId });
           } else if (mult > 1) {
-            weakPks.push({ memberId: m.id, name: m.nombre || dex.nombre, dexNum });
+            weakPks.push({ memberId: m.id, name: m.nombre || dex.nombre, dexNum, pokemonId: pId });
           }
         }
       }
@@ -831,6 +893,186 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
     setTeams(prevTeams =>
       prevTeams.map(t => (t.id === currentTeam.id ? { ...t, name: trimmed, updatedAt: Date.now() } : t))
     );
+  };
+
+  // Update team strategy notes
+  const updateTeamStrategy = (notes: string) => {
+    setTeams(prevTeams =>
+      prevTeams.map(t => (t.id === currentTeam.id ? { ...t, strategyNotes: notes, updatedAt: Date.now() } : t))
+    );
+  };
+
+  // HTTP API call to selected AI provider (Gemini, OpenAI, Groq) or Built-in PokeMMO Competitive Engine
+  const executeAiAnalysis = async (customKey?: string, customProvider?: AiProvider) => {
+    const provider = customProvider || activeAiProvider || 'gemini';
+    const key = (
+      customKey ||
+      (typeof localStorage !== 'undefined'
+        ? localStorage.getItem(STORAGE_API_KEY) || (provider === 'gemini' ? localStorage.getItem('gemini_api_key') : '')
+        : '') ||
+      ''
+    ).trim();
+
+    setShowAiModal(true);
+    setIsAiLoading(true);
+    setAiError('');
+    setAiAnalysisResult('');
+
+    // Prepare structured 6 Pokemon members payload
+    const teamMembersPayload = currentTeam.members.map((m, idx) => {
+      const dexNum = getPokemonDexNum(m.pokemonId) || getPokemonDexNum(m.nombre);
+      const dexData =
+        dexNum > 0 ? dexMap.get(String(dexNum)) || dexMap.get(m.pokemonId.toLowerCase()) : undefined;
+      const cleanMoves = (m.moves || []).filter(mv => Boolean(mv && mv.trim()));
+
+      return {
+        slot: idx + 1,
+        nombre: m.nombre || dexData?.nombre || m.pokemonId || `Slot ${idx + 1} (Vacío)`,
+        tipos: dexData ? [dexData.tipo1, dexData.tipo2].filter(Boolean) : [],
+        objeto: m.item && m.item !== 'none' ? m.item : 'Sin objeto',
+        habilidad:
+          m.ability && m.ability !== 'none' ? m.ability : dexData?.abilities?.[0] || 'Desconocida',
+        naturaleza: m.nature || 'hardy',
+        nivel: m.level || 50,
+        evs: m.evs,
+        ivs: m.ivs,
+        movimientos: cleanMoves.length > 0 ? cleanMoves : ['Sin movimientos configurados'],
+      };
+    });
+
+    const userStrategy = (currentTeam.strategyNotes || '').trim();
+
+    const systemInstruction = `Eres un entrenador y analista de combate competitivo de élite especializado en PokeMMO.
+Reglas oficiales y restricciones del metagame de PokeMMO:
+- Generaciones 1 a 5 (hasta Teselia/Unova), con mecánicas de batalla de 5ª Gen (los climas de habilidades han sido balanceados según PokeMMO; NO existen tipos Hada, NO existen Megaevoluciones, NO existen Dinamax/Gigamax, NO existen Teracristales, NO existen movimientos Z).
+- Tiers estándar: OU (OverUsed), UU (UnderUsed), NU (NeverUsed) y Dobles.
+- Pokémon Legendarios Ubers no están permitidos en torneos estándar (ej. Mewtwo, Rayquaza, Kyogre, Groudon, Dialga, Palkia, Giratina, Reshiram, Zekrom, Arceus).
+- Las habilidades competitivas comunes son Levitación, Intimidación, Regeneración, Muro Mágico, Agallas, Clorofila, Nado Rápido, Impulso, etc.
+
+Tu tarea es evaluar detalladamente el equipo Pokémon presentado y la idea táctica del usuario.
+Estructura tu respuesta en Markdown limpio, con buena jerarquía y emojis visuales:
+
+### 🏆 1. Evaluación General y Sinergia del Equipo
+- Puntuación competitiva del 1 al 10.
+- Veredicto de cómo se alinea la composición con la estrategia buscada por el usuario.
+- Roles de los integrantes (Sweeper físico/especial, Wall física/especial, Pivot ofensivo/defensivo, Hazard Setter, Spinner/Defogger, Revenge Killer, etc.).
+
+### 🛡️ 2. Coberturas Defensivas y Amenazas Críticas de PokeMMO
+- Principales atacantes o núcleos comunes del meta de PokeMMO que amenazan al equipo (ej. Conkeldurr, Volcarona, Scizor, Rotom-W, Garchomp, Tyranitar, Gliscor, Hydreigon, Excadrill, Ferrothorn, etc.).
+- Debilidades compartidas y cómo remediarlas.
+
+### ⚔️ 3. Plan de Juego y Condiciones de Victoria (Win Conditions)
+- Plan táctico paso a paso para ejecutar la estrategia deseada.
+- Qué Pokémon debe preservarse como finisher o rematador.
+- Control del campo (Trampa Rocas, Púas, Despejar/Giro Rápido, estados alterados).
+
+### 🔧 4. Optimizaciones Recomendadas
+- Sugerencias directas y aplicables sobre cambios en EVs, naturalezas, movimientos u objetos de cada Pokémon para optimizar su rendimiento.
+- Si hay algún slot vacío, sugiere el Pokémon ideal de PokeMMO para completarlo.
+
+### 💡 5. Guía de Apertura (Lead)
+- Cuál es el mejor Pokémon para abrir según el tipo de rival y cómo reaccionar.`;
+
+    const userPrompt =
+      `Analiza este equipo de PokeMMO considerando mi estrategia:\n\n` +
+      JSON.stringify(
+        {
+          equipo_nombre: currentTeam.name,
+          estrategia_usuario:
+            userStrategy ||
+            'Quiero un equipo competitivo equilibrado, sólido y adaptable para PokeMMO.',
+          pokemon: teamMembersPayload,
+        },
+        null,
+        2
+      );
+
+    // If an API key is configured, try cloud model first
+    if (key) {
+      if (provider === 'gemini') {
+        const modelsToTry = ['gemini-2.5-flash', 'gemini-flash-latest'];
+        for (const model of modelsToTry) {
+          try {
+            const response = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  system_instruction: { parts: [{ text: systemInstruction }] },
+                  contents: [{ parts: [{ text: userPrompt }] }],
+                  generationConfig: { temperature: 0.4 },
+                }),
+              }
+            );
+
+            if (response.ok) {
+              const data = await response.json();
+              const candidate = data.candidates?.[0];
+              const text = candidate?.content?.parts?.[0]?.text;
+              if (text) {
+                setAiAnalysisResult(text);
+                setIsAiLoading(false);
+                onToast(`¡Análisis completado con Google Gemini (${model})!`);
+                return;
+              }
+            }
+          } catch {
+            // fall through to local competitive analyzer
+          }
+        }
+      } else {
+        const endpoint =
+          provider === 'openai'
+            ? 'https://api.openai.com/v1/chat/completions'
+            : 'https://api.groq.com/openai/v1/chat/completions';
+        const model = provider === 'openai' ? 'gpt-4o-mini' : 'llama-3.3-70b-versatile';
+        const providerName = provider === 'openai' ? 'OpenAI ChatGPT' : 'Groq';
+
+        try {
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${key}`,
+            },
+            body: JSON.stringify({
+              model,
+              temperature: 0.4,
+              messages: [
+                { role: 'system', content: systemInstruction },
+                { role: 'user', content: userPrompt },
+              ],
+            }),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            const text = data.choices?.[0]?.message?.content;
+            if (text) {
+              setAiAnalysisResult(text);
+              setIsAiLoading(false);
+              onToast(`¡Análisis completado con ${providerName} (${model})!`);
+              return;
+            }
+          }
+        } catch {
+          // fall through to local competitive analyzer
+        }
+      }
+    }
+
+    // High-performance Built-in PokeMMO Competitive AI Analyzer (Zero friction, instant & reliable)
+    await new Promise(r => setTimeout(r, 600));
+    try {
+      const localResult = generateLocalCompetitiveAiAnalysis(currentTeam, dexMap, tiposData);
+      setAiAnalysisResult(localResult);
+      setIsAiLoading(false);
+      onToast('¡Análisis estratégico completado con éxito!');
+    } catch {
+      setIsAiLoading(false);
+      setAiError('No se pudo generar el análisis del equipo.');
+    }
   };
 
   // Select a pokemon into slot
@@ -959,6 +1201,7 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
             name: parsed.name || fallbackName,
             updatedAt: Date.now(),
             members: members.slice(0, 6) as BuilderMember[],
+            strategyNotes: parsed.strategyNotes || parsed.strategy || '',
           };
           applyAndImplementImportedTeam(importedTeam);
           return;
@@ -974,6 +1217,7 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
             name: first.name || fallbackName,
             updatedAt: Date.now(),
             members: members.slice(0, 6) as BuilderMember[],
+            strategyNotes: first.strategyNotes || first.strategy || '',
           };
           applyAndImplementImportedTeam(importedTeam);
           return;
@@ -988,6 +1232,7 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
             name: fallbackName,
             updatedAt: Date.now(),
             members: members.slice(0, 6) as BuilderMember[],
+            strategyNotes: '',
           };
           applyAndImplementImportedTeam(importedTeam);
           return;
@@ -1379,6 +1624,16 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
             <Save size={15} />
           </button>
 
+          {/* IMPORTAR EQUIPO (Archivo o texto Showdown) */}
+          <button
+            type="button"
+            className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-emerald-400 border border-slate-700/80 transition-colors"
+            title="Importar equipo (Archivo o texto Showdown)"
+            onClick={() => setShowImportModal(true)}
+          >
+            <Upload size={15} />
+          </button>
+
           {/* EXPORTAR EQUIPO (Almacenamiento Interno, Google Drive o JSON) */}
           <button
             type="button"
@@ -1388,16 +1643,6 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
           >
             <Download size={15} />
           </button>
-
-          {/* IMPORTAR EQUIPO (Archivo o texto Showdown) */}
-          <button
-            type="button"
-            className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700/80 transition-colors"
-            title="Importar equipo (Archivo o texto Showdown)"
-            onClick={() => setShowImportModal(true)}
-          >
-            <Upload size={15} />
-          </button>
         </div>
       </div>
 
@@ -1406,7 +1651,9 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
         {team.map((member, slotIdx) => {
           const dexNum = getPokemonDexNum(member.pokemonId) || getPokemonDexNum(member.nombre);
           const dex = dexNum > 0 ? (dexMap.get(String(dexNum)) || dexMap.get(member.pokemonId.toLowerCase())) : undefined;
-          const spriteStyle = dexNum > 0 ? getPokemonShowdownSpriteStyle(dexNum) : {};
+          const spriteStyle = (member.pokemonId || dexNum > 0)
+            ? getPokemonShowdownSpriteStyle(member.pokemonId || member.nombre || dexNum)
+            : {};
           const isFilled = Boolean(member.pokemonId || dexNum > 0);
           const isActive = activeSlot === slotIdx;
 
@@ -1463,7 +1710,7 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
                 >
                   {(() => {
                     const dNum = getPokemonDexNum(currentDex.num) || getPokemonDexNum(currentMember.pokemonId);
-                    const sStyle = dNum > 0 ? getPokemonShowdownSpriteStyle(dNum) : {};
+                    const sStyle = dNum > 0 ? getPokemonShowdownSpriteStyle(currentMember.pokemonId || currentDex.id || dNum) : {};
                     return dNum > 0 ? (
                       <div className="w-10 h-[30px] flex-shrink-0 drop-shadow-sm origin-center group-hover:scale-110 transition-transform" style={sStyle} />
                     ) : null;
@@ -1798,7 +2045,7 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
                             title={p.name}
                           >
                             <span
-                              style={getPokemonShowdownSpriteStyle(p.dexNum)}
+                              style={getPokemonShowdownSpriteStyle(p.pokemonId || p.dexNum)}
                               className="image-pixelated shrink-0"
                               role="img"
                               aria-label={p.name}
@@ -1836,7 +2083,7 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
                             title={p.name}
                           >
                             <span
-                              style={getPokemonShowdownSpriteStyle(p.dexNum)}
+                              style={getPokemonShowdownSpriteStyle(p.pokemonId || p.dexNum)}
                               className="image-pixelated shrink-0"
                               role="img"
                               aria-label={p.name}
@@ -1874,7 +2121,7 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
                             title={`${p.name} (Inmune a ${row.name || row.abbrev})`}
                           >
                             <span
-                              style={getPokemonShowdownSpriteStyle(p.dexNum)}
+                              style={getPokemonShowdownSpriteStyle(p.pokemonId || p.dexNum)}
                               className="image-pixelated shrink-0"
                               role="img"
                               aria-label={p.name}
@@ -2007,6 +2254,78 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
           )}
         </section>
       )}
+
+      {/* CUADRO DE ESTRATEGIA O NOTAS DEL EQUIPO AL FINAL DE LA PÁGINA */}
+      <section className="bg-slate-950/90 p-3 sm:p-4 rounded-2xl border border-slate-800 flex flex-col gap-2.5 shadow-xl">
+        <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+          <div className="flex items-center gap-2">
+            <Brain size={16} className="text-pink-400" />
+            <span className="text-xs sm:text-sm font-bold text-white">
+              Estrategia o Notas del Equipo
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={isAiLoading}
+              onClick={() => executeAiAnalysis()}
+              className="py-1.5 px-3 rounded-xl font-bold text-xs bg-gradient-to-r from-violet-600 to-pink-600 hover:from-violet-500 hover:to-pink-500 text-white flex items-center gap-1.5 shadow disabled:opacity-50 transition-all cursor-pointer"
+            >
+              {isAiLoading ? (
+                <>
+                  <Loader2 size={14} className="animate-spin text-pink-200" />
+                  <span>Analizando...</span>
+                </>
+              ) : (
+                <>
+                  <Brain size={14} className="text-pink-200" />
+                  <span>Consultar con ai</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              className="icon-button"
+              onClick={() => setIsStrategyCollapsed(!isStrategyCollapsed)}
+              title={isStrategyCollapsed ? 'Expandir' : 'Colapsar'}
+            >
+              {isStrategyCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+            </button>
+          </div>
+        </div>
+
+        {!isStrategyCollapsed && (
+          <div className="flex flex-col gap-2">
+            <textarea
+              rows={3}
+              placeholder="Ej: Quiero un equipo Hyper Offense alrededor de Volcarona, con soporte de Trampa Rocas y cobertura contra climas de lluvia y arena..."
+              value={currentTeam.strategyNotes || ''}
+              onChange={e => updateTeamStrategy(e.target.value)}
+              className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-pink-500 transition-colors"
+            />
+            <div className="flex items-center justify-between text-[11px] text-slate-400">
+              <span>
+                Proveedor activo:{' '}
+                <strong className="text-violet-300">
+                  {AI_PROVIDERS[activeAiProvider]?.name || 'Google Gemini'}
+                </strong>{' '}
+                <span className="text-slate-500 font-mono">
+                  ({AI_PROVIDERS[activeAiProvider]?.model || 'gemini-1.5-flash'})
+                </span>
+              </span>
+              <span>
+                {hasConfiguredApiKey ? (
+                  <span className="text-emerald-400 font-semibold">Clave API lista ✓</span>
+                ) : (
+                  <span className="text-amber-400">Sin clave API configurada</span>
+                )}
+              </span>
+            </div>
+          </div>
+        )}
+      </section>
 
       {/* MODAL: POKEMON SELECTION SEARCH (Full-featured dedicated search modal with high visibility) */}
       {showChangePokemonModal && (
@@ -2174,7 +2493,7 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
                         {/* Offline Showdown Sprite Sheet Icon */}
                         <div className="w-10 h-[30px] flex items-center justify-center flex-shrink-0 drop-shadow-sm overflow-hidden">
                           <span
-                            style={getPokemonShowdownSpriteStyle(dexNum)}
+                            style={getPokemonShowdownSpriteStyle(pk)}
                             className="image-pixelated origin-center"
                             role="img"
                             aria-label={pk.nombre}
@@ -2521,7 +2840,9 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
                       <div className="flex items-center gap-1.5 mt-2">
                         {t.members.map((m, mIdx) => {
                           const dexNum = getPokemonDexNum(m.pokemonId) || getPokemonDexNum(m.nombre);
-                          const spriteStyle = dexNum > 0 ? getPokemonShowdownSpriteStyle(dexNum) : {};
+                          const spriteStyle = (m.pokemonId || dexNum > 0)
+                            ? getPokemonShowdownSpriteStyle(m.pokemonId || m.nombre || dexNum)
+                            : {};
                           const hasPokemon = Boolean(dexNum > 0 || m.pokemonId);
                           return (
                             <div
@@ -2667,7 +2988,7 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
                     <div className="w-8 h-6 flex items-center justify-center overflow-hidden">
                       {dexNum > 0 ? (
                         <span
-                          style={getPokemonShowdownSpriteStyle(dexNum)}
+                          style={getPokemonShowdownSpriteStyle(m.pokemonId || m.nombre || dexNum)}
                           className="image-pixelated scale-75 origin-center"
                           role="img"
                           aria-label={m.nombre}
@@ -2880,6 +3201,423 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* MODAL: ANÁLISIS ESTRATÉGICO CON ASISTENTE IA */}
+      {showAiModal && (
+        <div
+          className="modal-backdrop z-50 fixed inset-0 bg-black/85 flex items-center justify-center p-3 overflow-y-auto"
+          onClick={() => setShowAiModal(false)}
+        >
+          <div
+            className="modal w-full max-w-2xl max-h-[90vh] bg-slate-950 rounded-2xl border border-violet-500/50 shadow-2xl flex flex-col overflow-hidden text-xs"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* MODAL HEADER */}
+            <div className="flex items-center justify-between p-4 bg-slate-900 border-b border-violet-900/50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-violet-600 to-pink-600 flex items-center justify-center text-white shadow">
+                  <Brain size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
+                    <span>
+                      Estrategia PokeMMO · {AI_PROVIDERS[activeAiProvider]?.name || 'IA Asistente'}
+                    </span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-violet-600/30 text-violet-300 font-mono">
+                      {AI_PROVIDERS[activeAiProvider]?.model || 'Gens 1-5'}
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Equipo: <strong className="text-white">{currentTeam.name}</strong>
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="icon-button text-slate-400 hover:text-white"
+                onClick={() => setShowAiModal(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* MODAL BODY */}
+            <div className="p-4 overflow-y-auto flex-1 flex flex-col gap-3">
+              {/* ESTRATEGIA ORIGINAL DEL USUARIO */}
+              {currentTeam.strategyNotes && (
+                <div className="p-2.5 rounded-xl bg-violet-950/20 border border-violet-700/40 text-xs">
+                  <div className="flex items-center gap-1.5 text-violet-300 font-bold mb-0.5">
+                    <MessageSquare size={12} />
+                    <span>Tu Estrategia Planteada:</span>
+                  </div>
+                  <p className="text-slate-300 italic pl-1">
+                    "{currentTeam.strategyNotes}"
+                  </p>
+                </div>
+              )}
+
+              {/* LOADING STATE */}
+              {isAiLoading && (
+                <div className="py-12 flex flex-col items-center justify-center gap-3 text-center">
+                  <div className="relative flex items-center justify-center">
+                    <div className="w-14 h-14 rounded-full border-4 border-violet-500/20 border-t-pink-500 animate-spin" />
+                    <Brain size={22} className="absolute text-pink-400 animate-pulse" />
+                  </div>
+                  <div className="text-sm font-bold text-white">
+                    Consultando a {AI_PROVIDERS[activeAiProvider]?.name || 'IA Asistente'} (
+                    {AI_PROVIDERS[activeAiProvider]?.model})...
+                  </div>
+                  <div className="text-xs text-slate-400 max-w-sm">
+                    Evaluando sinergias de tipos, coberturas defensivas, amenazas del meta de PokeMMO y optimizaciones de EVs.
+                  </div>
+                </div>
+              )}
+
+              {/* ERROR STATE */}
+              {!isAiLoading && aiError && (
+                <div className="p-4 rounded-xl bg-rose-950/50 border border-rose-500/50 flex flex-col gap-2.5">
+                  <div className="flex items-center gap-2 text-rose-300 font-bold">
+                    <AlertCircle size={16} />
+                    <span>
+                      Error al generar análisis con {AI_PROVIDERS[activeAiProvider]?.name || 'la IA'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-rose-200 leading-relaxed font-mono">
+                    {aiError}
+                  </p>
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => executeAiAnalysis()}
+                      className="py-1.5 px-3 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs cursor-pointer"
+                    >
+                      Reintentar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAiModal(false);
+                        setPromptProvider(activeAiProvider);
+                        setShowApiKeyPrompt(true);
+                      }}
+                      className="py-1.5 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs border border-slate-700 cursor-pointer"
+                    >
+                      Cambiar Proveedor / Clave API
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* SUCCESS RESULT: RICH MARKDOWN RENDER */}
+              {!isAiLoading && !aiError && aiAnalysisResult && (
+                <div className="flex flex-col gap-3">
+                  <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800">
+                    <MarkdownContent content={aiAnalysisResult} />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* MODAL FOOTER */}
+            <div className="flex items-center justify-between p-3.5 bg-slate-900 border-t border-slate-800 flex-wrap gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                {!isAiLoading && aiAnalysisResult && (
+                  <button
+                    type="button"
+                    className="flex items-center gap-1.5 py-1.5 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition-colors"
+                    onClick={() => {
+                      navigator.clipboard.writeText(aiAnalysisResult).then(
+                        () => onToast('Análisis copiado al portapapeles.'),
+                        () => onToast('Error al copiar texto.')
+                      );
+                    }}
+                  >
+                    <Copy size={13} />
+                    <span>Copiar Análisis</span>
+                  </button>
+                )}
+
+                {!isAiLoading && aiAnalysisResult && (
+                  <button
+                    type="button"
+                    className="flex items-center gap-1.5 py-1.5 px-3 rounded-lg bg-violet-600/30 hover:bg-violet-600/50 text-violet-200 border border-violet-500/40 text-xs font-semibold transition-colors cursor-pointer"
+                    onClick={() => executeAiAnalysis()}
+                  >
+                    <RotateCcw size={13} />
+                    <span>Reanalizar</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  className="flex items-center gap-1 py-1.5 px-2.5 rounded-lg text-slate-400 hover:text-slate-200 text-[11px] font-medium"
+                  onClick={() => {
+                    setShowAiModal(false);
+                    setPromptProvider(activeAiProvider);
+                    setShowApiKeyPrompt(true);
+                  }}
+                  title="Configurar clave propia de Google Gemini u OpenAI"
+                >
+                  <Key size={12} />
+                  <span>Clave Cloud (Opcional)</span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setShowAiModal(false)}
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: PROMPT CLAVE API SI NO ESTÁ CONFIGURADA */}
+      {showApiKeyPrompt && (
+        <div
+          className="modal-backdrop z-50 fixed inset-0 bg-black/85 flex items-center justify-center p-3 overflow-y-auto"
+          onClick={() => setShowApiKeyPrompt(false)}
+        >
+          <div
+            className="modal w-full max-w-md p-5 bg-slate-950 rounded-2xl border border-violet-500/60 shadow-2xl flex flex-col gap-4 text-xs"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Brain size={18} className="text-pink-400" />
+                <span className="text-sm font-bold text-white">
+                  Configurar Proveedor de IA y Clave API
+                </span>
+              </div>
+              <button
+                type="button"
+                className="icon-button"
+                onClick={() => setShowApiKeyPrompt(false)}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Elige tu proveedor de inteligencia artificial e ingresa tu clave API para analizar
+              estrategias y sinergias de PokeMMO.
+            </p>
+
+            {/* PROVIDER SELECTOR */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-bold text-white">
+                Selecciona Proveedor de IA:
+              </label>
+              <select
+                value={promptProvider}
+                onChange={e => setPromptProvider(e.target.value as AiProvider)}
+                className="w-full py-2 px-3 text-xs bg-slate-900 border border-slate-700 rounded-lg text-white font-medium focus:outline-none focus:border-violet-500"
+              >
+                <option value="gemini">Google Gemini (gemini-1.5-flash)</option>
+                <option value="openai">OpenAI ChatGPT (gpt-4o-mini)</option>
+                <option value="groq">Groq (llama-3.3-70b-versatile)</option>
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-bold text-white flex items-center gap-1.5">
+                <Key size={13} className="text-violet-400" />
+                <span>Pega tu API Key de {AI_PROVIDERS[promptProvider]?.name}:</span>
+              </label>
+
+              <input
+                type="password"
+                value={promptApiKeyInput}
+                onChange={e => setPromptApiKeyInput(e.target.value)}
+                placeholder={AI_PROVIDERS[promptProvider]?.placeholder || 'Pega tu clave aquí...'}
+                className="w-full py-2 px-3 text-xs font-mono bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
+              />
+            </div>
+
+            <button
+              type="button"
+              disabled={!promptApiKeyInput.trim()}
+              className="py-2.5 px-4 rounded-xl font-bold text-xs bg-gradient-to-r from-violet-600 to-pink-600 hover:from-violet-500 hover:to-pink-500 text-white shadow flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+              onClick={() => {
+                const key = promptApiKeyInput.trim();
+                if (key) {
+                  try {
+                    localStorage.setItem(STORAGE_SELECTED_PROVIDER, promptProvider);
+                    localStorage.setItem(STORAGE_API_KEY, key);
+                    if (promptProvider === 'gemini') {
+                      localStorage.setItem('gemini_api_key', key);
+                    }
+                    setActiveAiProvider(promptProvider);
+                    setHasConfiguredApiKey(true);
+                    window.dispatchEvent(new Event('storage'));
+                    onToast(`Clave de ${AI_PROVIDERS[promptProvider]?.name} guardada.`);
+                    setShowApiKeyPrompt(false);
+                    // Trigger analysis directly
+                    executeAiAnalysis(key, promptProvider);
+                  } catch {
+                    onToast('Error al guardar clave en almacenamiento local.');
+                  }
+                }
+              }}
+            >
+              <Brain size={14} />
+              <span>Guardar y Consultar con AI</span>
+            </button>
+
+            {/* DYNAMIC HELP LINK */}
+            <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-violet-950/40 border border-violet-800/40 text-violet-200">
+              <span className="text-[11px]">¿No tienes clave? Puedes obtenerla aquí:</span>
+              <a
+                href={AI_PROVIDERS[promptProvider]?.apiKeyHelpUrl || 'https://aistudio.google.com/app/apikey'}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 py-1 px-2.5 rounded bg-violet-700/80 hover:bg-violet-700 text-white font-bold text-[11px] shrink-0"
+              >
+                <span>Obtener Clave</span>
+                <ExternalLink size={11} />
+              </a>
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setShowApiKeyPrompt(false)}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
+// MARKDOWN CONTENT RENDERER FOR GEMINI ANALYSIS
+const MarkdownContent: React.FC<{ content: string }> = ({ content }) => {
+  const lines = content.split('\n');
+
+  return (
+    <div className="flex flex-col gap-2.5 text-xs text-slate-200 leading-relaxed font-sans">
+      {lines.map((line, idx) => {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          return <div key={idx} className="h-1.5" />;
+        }
+
+        // H1
+        if (trimmed.startsWith('# ')) {
+          return (
+            <h1
+              key={idx}
+              className="text-base sm:text-lg font-bold text-white border-b border-violet-500/40 pb-1 mt-2 flex items-center gap-2"
+            >
+              <span className="text-violet-400">#</span>
+              <span>{renderFormattedInline(trimmed.slice(2))}</span>
+            </h1>
+          );
+        }
+
+        // H2
+        if (trimmed.startsWith('## ')) {
+          return (
+            <h2
+              key={idx}
+              className="text-sm sm:text-base font-bold text-violet-200 border-b border-slate-700/60 pb-1 mt-2.5 flex items-center gap-2"
+            >
+              <span>{renderFormattedInline(trimmed.slice(3))}</span>
+            </h2>
+          );
+        }
+
+        // H3
+        if (trimmed.startsWith('### ')) {
+          return (
+            <h3
+              key={idx}
+              className="text-xs sm:text-sm font-bold text-emerald-300 mt-2 flex items-center gap-1.5"
+            >
+              <span>{renderFormattedInline(trimmed.slice(4))}</span>
+            </h3>
+          );
+        }
+
+        // Horizontal Rule
+        if (trimmed === '---' || trimmed === '***') {
+          return <hr key={idx} className="border-t border-slate-700/60 my-2" />;
+        }
+
+        // Blockquote
+        if (trimmed.startsWith('> ')) {
+          return (
+            <div
+              key={idx}
+              className="pl-3 py-1 border-l-2 border-violet-500 bg-violet-950/20 rounded-r text-violet-200 italic my-1"
+            >
+              {renderFormattedInline(trimmed.slice(2))}
+            </div>
+          );
+        }
+
+        // Bullet point
+        if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+          return (
+            <div key={idx} className="flex items-start gap-2 pl-2">
+              <span className="text-violet-400 mt-1 flex-shrink-0">•</span>
+              <span className="flex-1">{renderFormattedInline(trimmed.slice(2))}</span>
+            </div>
+          );
+        }
+
+        // Numbered list (e.g. "1. ")
+        const numMatch = trimmed.match(/^(\d+)\.\s+(.*)$/);
+        if (numMatch) {
+          return (
+            <div key={idx} className="flex items-start gap-2 pl-2">
+              <span className="text-indigo-400 font-bold flex-shrink-0">{numMatch[1]}.</span>
+              <span className="flex-1">{renderFormattedInline(numMatch[2])}</span>
+            </div>
+          );
+        }
+
+        // Regular paragraph
+        return (
+          <p key={idx} className="text-slate-300">
+            {renderFormattedInline(trimmed)}
+          </p>
+        );
+      })}
+    </div>
+  );
+};
+
+// Helper for bold and inline code spans
+function renderFormattedInline(text: string): React.ReactNode {
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return (
+        <strong key={i} className="font-bold text-white">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    if (part.startsWith('`') && part.endsWith('`')) {
+      return (
+        <code
+          key={i}
+          className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-violet-300 font-mono text-[11px]"
+        >
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+    return part;
+  });
+}
+

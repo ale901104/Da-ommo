@@ -19,6 +19,12 @@ import {
   TYPES,
 } from '../pokemon-constants';
 import { getPokemonShowdownSpriteStyle } from './PokemonSearchableSelect';
+import {
+  TypeSelectModal,
+  getPokeTypeColor,
+  getPokeTypeName,
+} from './TypeSelectModal';
+import { PokemonAnimatedSprite } from './PokemonAnimatedSprite';
 
 interface PokemonDexViewProps {
   onSelectAttacker: (pokemon: Pokemon) => void;
@@ -47,7 +53,9 @@ export const PokemonDexView: React.FC<PokemonDexViewProps> = ({
   onToast,
 }) => {
   const [search, setSearch] = useState('');
-  const [selectedType, setSelectedType] = useState<string>('all');
+  const [selectedType1, setSelectedType1] = useState<string>('all');
+  const [selectedType2, setSelectedType2] = useState<string>('all');
+  const [activeModalSlot, setActiveModalSlot] = useState<1 | 2 | null>(null);
   const [selectedGen, setSelectedGen] = useState<number | 'all'>('all');
   const [sortBy, setSortBy] = useState<SortOption>('num-asc');
   const [page, setPage] = useState(1);
@@ -62,9 +70,28 @@ export const PokemonDexView: React.FC<PokemonDexViewProps> = ({
       result = result.filter(p => p.generation === selectedGen);
     }
 
-    // Filter by Type
-    if (selectedType !== 'all') {
-      result = result.filter(p => p.tipo1 === selectedType || p.tipo2 === selectedType);
+    // Filter by Dual Type (Slot 1 and Slot 2)
+    const hasType1 = selectedType1 !== 'all';
+    const hasType2 = selectedType2 !== 'all';
+
+    if (hasType1 && hasType2) {
+      if (selectedType1 === selectedType2) {
+        // Mono-type search (pure type)
+        result = result.filter(
+          p => p.tipo1 === selectedType1 && (!p.tipo2 || p.tipo2 === selectedType1)
+        );
+      } else {
+        // Dual-type combination
+        result = result.filter(
+          p =>
+            (p.tipo1 === selectedType1 && p.tipo2 === selectedType2) ||
+            (p.tipo1 === selectedType2 && p.tipo2 === selectedType1)
+        );
+      }
+    } else if (hasType1) {
+      result = result.filter(p => p.tipo1 === selectedType1 || p.tipo2 === selectedType1);
+    } else if (hasType2) {
+      result = result.filter(p => p.tipo1 === selectedType2 || p.tipo2 === selectedType2);
     }
 
     // Filter by Search
@@ -108,7 +135,7 @@ export const PokemonDexView: React.FC<PokemonDexViewProps> = ({
           return 0;
       }
     });
-  }, [search, selectedType, selectedGen, sortBy]);
+  }, [search, selectedType1, selectedType2, selectedGen, sortBy]);
 
   const totalPages = Math.max(1, Math.ceil(filteredList.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -140,7 +167,7 @@ export const PokemonDexView: React.FC<PokemonDexViewProps> = ({
     <div className="flex flex-col gap-3">
       {/* HEADER CARD */}
       <section className="glass combat-card" aria-label="Pokemon Dex">
-        <div className="section-head">
+        <div className="section-head mb-2.5">
           <div className="flex items-center gap-2">
             <BookOpen size={18} className="text-emerald-400" />
             <span className="section-title">Pokemon dex · Pokédex General</span>
@@ -149,10 +176,6 @@ export const PokemonDexView: React.FC<PokemonDexViewProps> = ({
             {filteredList.length} Pokémon
           </span>
         </div>
-
-        <p className="text-xs text-slate-300 mt-1 mb-3">
-          Explora los 649 Pokémon de PokéMMO (Gen 1 a 5) con sprites locales sin conexión, estadísticas base y envío directo a la Calculadora o al Builder.
-        </p>
 
         {/* SEARCH BAR */}
         <div className="relative mb-2.5">
@@ -167,6 +190,95 @@ export const PokemonDexView: React.FC<PokemonDexViewProps> = ({
               setPage(1);
             }}
           />
+        </div>
+
+        {/* TWO TYPE SELECTION BUTTONS (MATCHING POKETYPE REFERENCE PHOTO) */}
+        <div className="mb-2.5">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+              <span>Filtrado por Tipos</span>
+              {(selectedType1 !== 'all' || selectedType2 !== 'all') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedType1('all');
+                    setSelectedType2('all');
+                    setPage(1);
+                  }}
+                  className="text-[10px] text-amber-400 hover:text-amber-300 font-normal underline lowercase cursor-pointer"
+                >
+                  restablecer
+                </button>
+              )}
+            </span>
+            <span className="text-[11px] font-medium text-slate-400">
+              {filteredList.length} Pokémon encontrados
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            {/* BUTTON TYPE 1 */}
+            <button
+              type="button"
+              onClick={() => setActiveModalSlot(1)}
+              style={
+                selectedType1 !== 'all'
+                  ? {
+                      backgroundColor: getPokeTypeColor(selectedType1),
+                      borderColor: 'rgba(255, 255, 255, 0.35)',
+                    }
+                  : undefined
+              }
+              className={`h-11 px-3.5 rounded-xl flex items-center justify-between text-sm font-bold border transition-all active:scale-[0.98] ${
+                selectedType1 !== 'all'
+                  ? 'text-white shadow-md'
+                  : 'bg-slate-800/80 hover:bg-slate-800 border-slate-700/60 text-slate-300'
+              }`}
+            >
+              <span
+                style={
+                  selectedType1 !== 'all'
+                    ? { textShadow: '0 1px 2px rgba(0,0,0,0.7), 0 0 1px rgba(0,0,0,0.9)' }
+                    : undefined
+                }
+                className="truncate"
+              >
+                {selectedType1 !== 'all' ? getPokeTypeName(selectedType1) : 'Tipo 1'}
+              </span>
+              <span className="text-white/80 text-base font-bold ml-1">»</span>
+            </button>
+
+            {/* BUTTON TYPE 2 */}
+            <button
+              type="button"
+              onClick={() => setActiveModalSlot(2)}
+              style={
+                selectedType2 !== 'all'
+                  ? {
+                      backgroundColor: getPokeTypeColor(selectedType2),
+                      borderColor: 'rgba(255, 255, 255, 0.35)',
+                    }
+                  : undefined
+              }
+              className={`h-11 px-3.5 rounded-xl flex items-center justify-between text-sm font-bold border transition-all active:scale-[0.98] ${
+                selectedType2 !== 'all'
+                  ? 'text-white shadow-md'
+                  : 'bg-slate-800/80 hover:bg-slate-800 border-slate-700/60 text-slate-300'
+              }`}
+            >
+              <span
+                style={
+                  selectedType2 !== 'all'
+                    ? { textShadow: '0 1px 2px rgba(0,0,0,0.7), 0 0 1px rgba(0,0,0,0.9)' }
+                    : undefined
+                }
+                className="truncate"
+              >
+                {selectedType2 !== 'all' ? getPokeTypeName(selectedType2) : 'Tipo 2'}
+              </span>
+              <span className="text-white/80 text-base font-bold ml-1">»</span>
+            </button>
+          </div>
         </div>
 
         {/* GENERATIONS TABS */}
@@ -190,27 +302,8 @@ export const PokemonDexView: React.FC<PokemonDexViewProps> = ({
           ))}
         </div>
 
-        {/* SORT & TYPE FILTER ROW */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-slate-700/40">
-          <div className="micro-field">
-            <label htmlFor="dex-type-filter">Filtrar por Tipo</label>
-            <select
-              id="dex-type-filter"
-              value={selectedType}
-              onChange={e => {
-                setSelectedType(e.target.value);
-                setPage(1);
-              }}
-            >
-              <option value="all">Todos los tipos</option>
-              {TYPES.map(([id, label]) => (
-                <option key={id} value={id}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </div>
-
+        {/* SORT ROW */}
+        <div className="pt-2 border-t border-slate-700/40">
           <div className="micro-field">
             <label htmlFor="dex-sort-filter">Ordenar por</label>
             <select
@@ -231,6 +324,22 @@ export const PokemonDexView: React.FC<PokemonDexViewProps> = ({
           </div>
         </div>
       </section>
+
+      {/* TYPE SELECTION MODAL */}
+      <TypeSelectModal
+        isOpen={activeModalSlot !== null}
+        onClose={() => setActiveModalSlot(null)}
+        currentType={activeModalSlot === 1 ? selectedType1 : selectedType2}
+        slotTitle={activeModalSlot === 1 ? 'Seleccionar Tipo 1' : 'Seleccionar Tipo 2'}
+        onSelectType={typeId => {
+          if (activeModalSlot === 1) {
+            setSelectedType1(typeId);
+          } else if (activeModalSlot === 2) {
+            setSelectedType2(typeId);
+          }
+          setPage(1);
+        }}
+      />
 
       {/* POKEMON LIST GRID */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -256,26 +365,24 @@ export const PokemonDexView: React.FC<PokemonDexViewProps> = ({
                   </span>
                 </div>
 
-                {/* SPRITE & TYPES ROW */}
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-10 h-8 flex items-center justify-center flex-shrink-0">
-                      <span
-                        style={getPokemonShowdownSpriteStyle(rawPk.num)}
-                        className="image-pixelated"
-                        role="img"
-                        aria-label={rawPk.nombre}
-                      />
-                    </div>
-                    <div className="flex items-center gap-1">
+                {/* SPRITE & TYPES ROW (LARGER ANIMATED POKEAPI GIFS WITH AESTHETIC FRAME) */}
+                <div className="flex items-center gap-3 mb-2.5">
+                  <PokemonAnimatedSprite
+                    num={rawPk.num}
+                    name={rawPk.nombre}
+                    pokemonId={rawPk.id}
+                    type={rawPk.tipo1}
+                    size="lg"
+                  />
+                  <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+                    <div className="flex items-center gap-1 flex-wrap">
                       <TypeBadge type={rawPk.tipo1} size="sm" />
                       {rawPk.tipo2 && <TypeBadge type={rawPk.tipo2} size="sm" />}
                     </div>
+                    <div className="text-[10px] text-slate-400 font-medium">
+                      Gen {rawPk.generation} · PokeMMO
+                    </div>
                   </div>
-
-                  <span className="text-[10px] text-slate-400 font-medium">
-                    Gen {rawPk.generation}
-                  </span>
                 </div>
 
                 {/* STATS BAR ROW */}

@@ -82,8 +82,7 @@ export default defineConfig({
         ],
       },
       devOptions: {
-        enabled: true,
-        type: 'module',
+        enabled: false,
       },
     }),
   ],
@@ -108,6 +107,7 @@ export default defineConfig({
     port,
     host: '0.0.0.0',
     allowedHosts: true,
+    hmr: false,
     fs: {
       strict: true,
     },
