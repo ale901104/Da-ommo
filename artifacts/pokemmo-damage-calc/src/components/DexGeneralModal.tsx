@@ -383,7 +383,8 @@ export const DexGeneralModal: React.FC<DexGeneralModalProps> = ({
                 className="btn btn-muted mt-2"
                 onClick={() => {
                   setSearch('');
-                  setSelectedType('all');
+                  setSelectedType1('all');
+                  setSelectedType2('all');
                 }}
               >
                 Limpiar todos los filtros

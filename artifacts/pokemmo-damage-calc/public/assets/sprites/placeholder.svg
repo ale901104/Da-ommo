@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" fill="none">
+  <!-- Crisp local silhouette placeholder for offline Pokemon sprites -->
+  <circle cx="48" cy="48" r="44" fill="#1e293b" stroke="#334155" stroke-width="4"/>
+  <path d="M4 48h88" stroke="#475569" stroke-width="5"/>
+  <circle cx="48" cy="48" r="14" fill="#0f172a" stroke="#475569" stroke-width="5"/>
+  <circle cx="48" cy="48" r="6" fill="#64748b"/>
+  <!-- Subtle silhouette curve -->
+  <path d="M48 18c14 0 26 8 30 20H18c4-12 16-20 30-20z" fill="#334155" opacity="0.3"/>
+</svg>

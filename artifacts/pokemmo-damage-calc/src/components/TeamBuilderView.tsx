@@ -64,6 +64,18 @@ import {
   type AiProvider,
 } from './SettingsView';
 import { generateLocalCompetitiveAiAnalysis } from '../lib/team-ai-analyzer';
+import {
+  initDriveAuth,
+  signInWithGoogle,
+  signOutGoogle,
+  getDriveAccessToken,
+  listDriveTeamFiles,
+  downloadDriveTeamFile,
+  saveTeamToDrive,
+  deleteDriveTeamFile,
+  type DriveTeamFile,
+} from '../lib/google-drive';
+import type { User } from 'firebase/auth';
 
 export interface BuilderMember {
   id: string; // unique slot ID (slot-1 ... slot-6)
@@ -602,6 +614,86 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
   const [showExportModal, setShowExportModal] = useState<boolean>(false);
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
   const [importPasteText, setImportPasteText] = useState<string>('');
+  const [tiposMode, setTiposMode] = useState<'simple' | 'detallado'>('simple');
+  const [emptySlotSearchQuery, setEmptySlotSearchQuery] = useState<string>('');
+
+  // Google Drive Integration states
+  const [googleUser, setGoogleUser] = useState<User | null>(null);
+  const [driveToken, setDriveToken] = useState<string | null>(null);
+  const [isDriveLoading, setIsDriveLoading] = useState<boolean>(false);
+  const [driveFiles, setDriveFiles] = useState<DriveTeamFile[]>([]);
+  const [driveFileToDelete, setDriveFileToDelete] = useState<DriveTeamFile | null>(null);
+  const [importSourceTab, setImportSourceTab] = useState<'drive' | 'local'>('drive');
+
+  // Load Google Drive files
+  const refreshDriveFiles = async (token?: string) => {
+    const activeToken = token || driveToken || getDriveAccessToken();
+    if (!activeToken) return;
+    setIsDriveLoading(true);
+    try {
+      const files = await listDriveTeamFiles(activeToken);
+      setDriveFiles(files);
+    } catch (err: unknown) {
+      console.error('Error fetching drive files:', err);
+      onToast(err instanceof Error ? err.message : 'Error al consultar Google Drive.');
+    } finally {
+      setIsDriveLoading(false);
+    }
+  };
+
+  // Google Drive Auth Listener
+  useEffect(() => {
+    const unsubscribe = initDriveAuth(
+      (user, token) => {
+        setGoogleUser(user);
+        setDriveToken(token);
+        if (token) {
+          refreshDriveFiles(token);
+        }
+      },
+      () => {
+        setGoogleUser(null);
+        setDriveToken(null);
+        setDriveFiles([]);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
+  // Connect Google Drive
+  const handleConnectGoogleDrive = async (): Promise<string | null> => {
+    setIsDriveLoading(true);
+    try {
+      const result = await signInWithGoogle();
+      if (result) {
+        setGoogleUser(result.user);
+        setDriveToken(result.accessToken);
+        onToast(`¡Conectado a Google Drive como ${result.user.email || 'usuario'}!`);
+        await refreshDriveFiles(result.accessToken);
+        return result.accessToken;
+      }
+      return null;
+    } catch (err: unknown) {
+      console.error('Google Sign-In Error:', err);
+      onToast(err instanceof Error ? err.message : 'No se pudo iniciar sesión con Google.');
+      return null;
+    } finally {
+      setIsDriveLoading(false);
+    }
+  };
+
+  // Disconnect Google Drive
+  const handleDisconnectGoogleDrive = async () => {
+    try {
+      await signOutGoogle();
+      setGoogleUser(null);
+      setDriveToken(null);
+      setDriveFiles([]);
+      onToast('Sesión de Google Drive cerrada.');
+    } catch {
+      onToast('Error al cerrar sesión de Google.');
+    }
+  };
 
   // AI Consultation states
   const [activeAiProvider, setActiveAiProvider] = useState<AiProvider>(() => {
@@ -674,6 +766,17 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
     }
     return map;
   }, []);
+
+  // Quick lookup for move data (type, category, power) by name
+  const movesByName = useMemo(() => {
+    const map = new Map<string, (typeof allMoves)[0]>();
+    for (const m of allMoves) {
+      map.set(m.nombre.toLowerCase(), m);
+      map.set(m.id.toLowerCase(), m);
+      if (m.showdownKey) map.set(m.showdownKey.toLowerCase(), m);
+    }
+    return map;
+  }, [allMoves]);
 
   const team = currentTeam.members;
   const currentMember = team[activeSlot] || team[0];
@@ -821,6 +924,57 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
     return { filledMembers, resistantRows, weakRows, immuneRows };
   }, [team, dexMap]);
 
+  // Offensive move coverage: which team members hit each of the 17 defending types super-effectively
+  const moveCoverageByDefendingType = useMemo(() => {
+    const filled = team.filter(m => m.pokemonId || m.nombre);
+    return POKETYPE_ORDER.map(defTypeId => {
+      const pInfo = POKETYPE_MAP[defTypeId] || { abbrev: defTypeId.slice(0, 4), bg: '#555', name: defTypeId };
+      const hits: {
+        memberId: string;
+        memberName: string;
+        pokemonId: string;
+        dexNum: number;
+        moveName: string;
+        moveType: string;
+        category: string;
+        power: number;
+        mult: number;
+      }[] = [];
+
+      for (const m of filled) {
+        const dex = getDexForMember(m);
+        const dexNum = dex?.num || getPokemonDexNum(m.pokemonId) || getPokemonDexNum(m.nombre);
+        const mName = m.nombre || dex?.nombre || 'Pokémon';
+        for (const mvName of m.moves || []) {
+          if (!mvName || !mvName.trim()) continue;
+          const mv = movesByName.get(mvName.toLowerCase());
+          if (mv && mv.categoria !== 'status') {
+            const mult = TYPE_CHART[mv.tipo]?.[defTypeId] ?? 1;
+            if (mult > 1) {
+              hits.push({
+                memberId: m.id,
+                memberName: mName,
+                pokemonId: m.pokemonId || dex?.id || '',
+                dexNum,
+                moveName: mv.nombre,
+                moveType: mv.tipo,
+                category: mv.categoria,
+                power: mv.poder,
+                mult,
+              });
+            }
+          }
+        }
+      }
+
+      return {
+        typeId: defTypeId,
+        pInfo,
+        hits,
+      };
+    });
+  }, [team, dexMap, movesByName]);
+
   // Available abilities for current pokemon with full descriptions
   const currentAbilitiesWithDesc = useMemo(() => {
     if (!currentDex) return [];
@@ -942,43 +1096,56 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
 
     const userStrategy = (currentTeam.strategyNotes || '').trim();
 
-    const systemInstruction = `Eres un entrenador y analista de combate competitivo de élite especializado en PokeMMO.
+    const systemInstruction = `Eres un analista y entrenador de combate competitivo de élite especializado en PokeMMO.
 Reglas oficiales y restricciones del metagame de PokeMMO:
-- Generaciones 1 a 5 (hasta Teselia/Unova), con mecánicas de batalla de 5ª Gen (los climas de habilidades han sido balanceados según PokeMMO; NO existen tipos Hada, NO existen Megaevoluciones, NO existen Dinamax/Gigamax, NO existen Teracristales, NO existen movimientos Z).
+- Basado estrictamente en Generaciones 1 a 5 (hasta Teselia/Unova).
+- NO EXISTE EL TIPO HADA (Clefable es Normal, Togekiss es Normal/Volador, Gardevoir es Psíquico puro, etc.).
+- Sin Megaevoluciones, Dinamax ni Teracristales.
 - Tiers estándar: OU (OverUsed), UU (UnderUsed), NU (NeverUsed) y Dobles.
-- Pokémon Legendarios Ubers no están permitidos en torneos estándar (ej. Mewtwo, Rayquaza, Kyogre, Groudon, Dialga, Palkia, Giratina, Reshiram, Zekrom, Arceus).
-- Las habilidades competitivas comunes son Levitación, Intimidación, Regeneración, Muro Mágico, Agallas, Clorofila, Nado Rápido, Impulso, etc.
 
-Tu tarea es evaluar detalladamente el equipo Pokémon presentado y la idea táctica del usuario.
-Estructura tu respuesta en Markdown limpio, con buena jerarquía y emojis visuales:
+Tu misión es analizar en profundidad los 6 Pokémon del equipo, sus 4 movimientos de combate exactos, naturalezas, habilidades, objetos, EVs e IVs, así como el cuadro de estrategia y notas del usuario.
 
-### 🏆 1. Evaluación General y Sinergia del Equipo
-- Puntuación competitiva del 1 al 10.
-- Veredicto de cómo se alinea la composición con la estrategia buscada por el usuario.
-- Roles de los integrantes (Sweeper físico/especial, Wall física/especial, Pivot ofensivo/defensivo, Hazard Setter, Spinner/Defogger, Revenge Killer, etc.).
+DEBES ESTRUCTURAR TU RESPUESTA OBLIGATORIAMENTE EN LAS SIGUIENTES 11 SECCIONES NUMERADAS EN MARKDOWN:
 
-### 🛡️ 2. Coberturas Defensivas y Amenazas Críticas de PokeMMO
-- Principales atacantes o núcleos comunes del meta de PokeMMO que amenazan al equipo (ej. Conkeldurr, Volcarona, Scizor, Rotom-W, Garchomp, Tyranitar, Gliscor, Hydreigon, Excadrill, Ferrothorn, etc.).
-- Debilidades compartidas y cómo remediarlas.
+### 🏆 11. Puntuación Global del Equipo: [PUNTUACIÓN de 1 a 100] / 100
+- Evalúa el equipo de forma integral y asigna una puntuación estricta de 1 a 100 teniendo en cuenta sinergia, coberturas, balance de roles, optimización de EVs/IVs y concordancia con la estrategia del usuario.
 
-### ⚔️ 3. Plan de Juego y Condiciones de Victoria (Win Conditions)
-- Plan táctico paso a paso para ejecutar la estrategia deseada.
-- Qué Pokémon debe preservarse como finisher o rematador.
-- Control del campo (Trampa Rocas, Púas, Despejar/Giro Rápido, estados alterados).
+### 🛡️ 1. Evaluación de Sinergia del Equipo y Cobertura Defensiva de Tipos
+- Coberturas elementales defensivas y debilidades compartidas entre los Pokémon del equipo.
 
-### 🔧 4. Optimizaciones Recomendadas
-- Sugerencias directas y aplicables sobre cambios en EVs, naturalezas, movimientos u objetos de cada Pokémon para optimizar su rendimiento.
-- Si hay algún slot vacío, sugiere el Pokémon ideal de PokeMMO para completarlo.
+### ⚔️ 2. Evaluación de Cobertura de Movimientos del Equipo
+- Evalúa los movimientos de ataque de cada Pokémon y qué tipos defensivos del rival son cubiertos con daño supereficaz o quedan sin respuesta.
 
-### 💡 5. Guía de Apertura (Lead)
-- Cuál es el mejor Pokémon para abrir según el tipo de rival y cómo reaccionar.`;
+### 👑 3. Sugerencia de Líder(es) (Lead) y Cómo Desempeñar su Función
+- Sugiere cuál o cuáles deben ser los Pokémon de apertura (Lead) y cómo ejecutar el turno 1 según el tipo de rival.
+
+### 📝 4. Sugerencias para la Estrategia Teniendo en Cuenta la Estrategia del Usuario
+- Consejos tácticos y ajustes adaptados al plan del usuario escrito en sus notas.
+
+### ♟️ 5. Roles que Debe Desempeñar Cada Pokémon
+- Define el rol competitivo exacto de cada uno de los 6 miembros (Sweeper físico/especial, Muralla física/especial, Pivot ofensivo/defensivo, Hazard Setter, Hazard Remover, Revenge Killer, etc.).
+
+### ⚠️ 6. Posibles Debilidades y Pokémon que Pueden Romper la Estrategia (Threats)
+- Amenazas del meta de PokeMMO (ej. Garchomp, Volcarona, Scizor, Rotom-W, Conkeldurr, Tyranitar, Gliscor, Ferrothorn) que amenazan al equipo y cómo superarlos.
+
+### 🔍 7. Resolución de Pokémon Problemáticos Mencionados por el Usuario
+- Si el usuario menciona en sus notas algún Pokémon específico que le cause problemas, detalla la táctica exacta y cómo contrarrestarlo con este equipo.
+
+### 💡 8. Sugerencias de Pokémon para Desempeñar Roles en el Equipo
+- Si el usuario pregunta por un Pokémon para un rol específico o si falta un rol clave en el equipo, ofrece las mejores opciones competitivas de Gen 1-5.
+
+### 🛠️ 9. Viabilidad de Pokémon Sugeridos por el Usuario y Configuración de Entrenamiento
+- Si el usuario sugiere un Pokémon específico para un rol, responde si es viable o no. Si hay una mínima posibilidad, proporciona el set completo: Entrenamiento (EVs), Naturaleza, Habilidad, Objeto y 4 Movimientos.
+
+### 📜 10. Metagame Gen 1 a 5 Sin Tipo Hada
+- Confirma que todas las interacciones respetan estrictamente las mecánicas de 1ª a 5ª Generación sin tipo Hada.`;
 
     const userPrompt =
-      `Analiza este equipo de PokeMMO considerando mi estrategia:\n\n` +
+      `Analiza este equipo de PokeMMO considerando sus movimientos y mi estrategia:\n\n` +
       JSON.stringify(
         {
           equipo_nombre: currentTeam.name,
-          estrategia_usuario:
+          estrategia_y_notas_usuario:
             userStrategy ||
             'Quiero un equipo competitivo equilibrado, sólido y adaptable para PokeMMO.',
           pokemon: teamMembersPayload,
@@ -990,7 +1157,7 @@ Estructura tu respuesta en Markdown limpio, con buena jerarquía y emojis visual
     // If an API key is configured, try cloud model first
     if (key) {
       if (provider === 'gemini') {
-        const modelsToTry = ['gemini-2.5-flash', 'gemini-flash-latest'];
+        const modelsToTry = ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
         for (const model of modelsToTry) {
           try {
             const response = await fetch(
@@ -1359,39 +1526,68 @@ Estructura tu respuesta en Markdown limpio, con buena jerarquía y emojis visual
     setShowExportModal(false);
   };
 
-  // Export to Google Drive
+  // Export to Google Drive using official Google Drive REST API
   const handleExportToGoogleDrive = async () => {
-    // Keep team saved in app
     handleSaveTeamLocal();
-    const safeName = currentTeam.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
-    const fileName = `${safeName || 'equipo'}.poketeam.json`;
-    const fileContent = JSON.stringify(currentTeam, null, 2);
-
-    // On mobile / Android, navigator.share with files includes "Guardar en Drive" directly!
-    if (typeof navigator !== 'undefined' && navigator.share && navigator.canShare) {
-      try {
-        const blob = new Blob([fileContent], { type: 'application/json' });
-        const file = new File([blob], fileName, { type: 'application/json' });
-        if (navigator.canShare({ files: [file] })) {
-          await navigator.share({
-            title: `PokeMMO Equipo: ${currentTeam.name}`,
-            text: `Guardar en Google Drive: ${currentTeam.name}`,
-            files: [file],
-          });
-          onToast(`Selecciona "Guardar en Drive" en el menú.`);
-          setShowExportModal(false);
-          return;
-        }
-      } catch (err: unknown) {
-        if ((err as Error)?.name === 'AbortError') return;
-      }
+    let token = driveToken || getDriveAccessToken();
+    if (!token) {
+      token = await handleConnectGoogleDrive();
+      if (!token) return;
     }
 
-    // Fallback on desktop: Download file and open Google Drive
-    handleDirectDownloadJson();
-    window.open('https://drive.google.com/drive/u/0/my-drive', '_blank', 'noopener,noreferrer');
-    onToast(`Archivo descargado. Abriendo Google Drive para subirlo.`);
-    setShowExportModal(false);
+    setIsDriveLoading(true);
+    try {
+      await saveTeamToDrive(token, currentTeam);
+      onToast(`¡Equipo "${currentTeam.name}" guardado exitosamente en Google Drive!`);
+      setShowExportModal(false);
+      refreshDriveFiles(token);
+    } catch (err: unknown) {
+      console.error('Error exporting to drive:', err);
+      onToast(err instanceof Error ? err.message : 'Error al guardar en Google Drive.');
+    } finally {
+      setIsDriveLoading(false);
+    }
+  };
+
+  // Import team directly from Google Drive
+  const handleImportFromDrive = async (file: DriveTeamFile) => {
+    let token = driveToken || getDriveAccessToken();
+    if (!token) {
+      token = await handleConnectGoogleDrive();
+      if (!token) return;
+    }
+
+    setIsDriveLoading(true);
+    try {
+      const data = await downloadDriveTeamFile(token, file.id);
+      applyAndImplementImportedTeam(data);
+      setShowImportModal(false);
+      onToast(`Equipo importado con éxito desde Google Drive.`);
+    } catch (err: unknown) {
+      console.error('Error importing from Drive:', err);
+      onToast(err instanceof Error ? err.message : 'Error al importar equipo de Google Drive.');
+    } finally {
+      setIsDriveLoading(false);
+    }
+  };
+
+  // Confirm and execute Drive file deletion (User confirmation per Workspace Skill rules)
+  const handleConfirmDeleteDriveFile = async () => {
+    if (!driveFileToDelete) return;
+    const token = driveToken || getDriveAccessToken();
+    if (!token) return;
+
+    setIsDriveLoading(true);
+    try {
+      await deleteDriveTeamFile(token, driveFileToDelete.id);
+      onToast(`Archivo eliminado de Google Drive.`);
+      setDriveFileToDelete(null);
+      await refreshDriveFiles(token);
+    } catch (err: unknown) {
+      onToast(err instanceof Error ? err.message : 'Error al eliminar archivo de Google Drive.');
+    } finally {
+      setIsDriveLoading(false);
+    }
   };
 
   // Copy or download Showdown format
@@ -1549,11 +1745,11 @@ Estructura tu respuesta en Markdown limpio, con buena jerarquía y emojis visual
           ) : (
             <button
               type="button"
-              className="flex items-center gap-1.5 py-1 px-2.5 rounded-lg bg-slate-900 border-b-2 border-slate-600 hover:border-emerald-400 text-xs font-bold text-slate-200 transition-colors truncate"
+              className="flex items-center gap-1.5 py-1 px-2.5 rounded-lg bg-slate-900 border-b-2 border-slate-600 hover:border-emerald-400 text-xs font-bold text-slate-200 transition-colors text-left break-words max-w-full"
               onClick={() => setShowTeamsModal(true)}
               title="Cambiar de equipo o ver mis equipos guardados"
             >
-              <span className="truncate">{currentTeam.name}</span>
+              <span className="break-words leading-tight">{currentTeam.name}</span>
               <ChevronDown size={13} className="text-slate-400 flex-shrink-0" />
             </button>
           )}
@@ -1624,24 +1820,24 @@ Estructura tu respuesta en Markdown limpio, con buena jerarquía y emojis visual
             <Save size={15} />
           </button>
 
-          {/* IMPORTAR EQUIPO (Archivo o texto Showdown) */}
+          {/* IMPORTAR EQUIPO (Flecha hacia abajo) */}
           <button
             type="button"
             className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-emerald-400 border border-slate-700/80 transition-colors"
-            title="Importar equipo (Archivo o texto Showdown)"
+            title="Importar equipo (Google Drive o almacenamiento local)"
             onClick={() => setShowImportModal(true)}
           >
-            <Upload size={15} />
+            <Download size={15} />
           </button>
 
-          {/* EXPORTAR EQUIPO (Almacenamiento Interno, Google Drive o JSON) */}
+          {/* EXPORTAR EQUIPO (Flecha hacia arriba) */}
           <button
             type="button"
             className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-slate-700/80 transition-colors"
-            title="Exportar equipo (Almacenamiento interno, Google Drive o JSON)"
+            title="Exportar equipo (Google Drive o almacenamiento local)"
             onClick={() => setShowExportModal(true)}
           >
-            <Download size={15} />
+            <Upload size={15} />
           </button>
         </div>
       </div>
@@ -1698,7 +1894,8 @@ Estructura tu respuesta en Markdown limpio, con buena jerarquía y emojis visual
 
       {/* SUB-TAB 1: [ EQUIPO ] - The exact view from Screenshot_20261017_104629_PokeType.jpg */}
       {activeTab === 'equipo' && (
-        <section className="bg-slate-950/90 p-4 rounded-2xl border border-slate-800 flex flex-col gap-4 shadow-xl">
+        <div className="flex flex-col gap-3">
+          <section className="bg-slate-950/90 p-4 rounded-2xl border border-slate-800 flex flex-col gap-4 shadow-xl">
           {currentMember.pokemonId && currentDex ? (
             <>
               {/* POKEMON NUMBER, NAME & TYPE HEADER: e.g. "#245 Suicune - Agua" WITH ICON */}
@@ -2001,27 +2198,206 @@ Estructura tu respuesta en Markdown limpio, con buena jerarquía y emojis visual
               <p className="text-xs text-slate-400 max-w-sm">
                 Selecciona un Pokémon de 1ª a 5ª Generación para asignarlo a este espacio de tu equipo.
               </p>
-              <button
-                type="button"
-                className="py-2 px-5 rounded-xl font-bold text-xs bg-emerald-600 hover:bg-emerald-500 text-white shadow-md flex items-center gap-2"
-                onClick={() => setShowChangePokemonModal(true)}
-              >
-                <Search size={14} />
-                <span>Buscar y añadir Pokémon</span>
-              </button>
+              {/* CAMPO DE ESCRITURA PARA BÚSQUEDA SOLO POR NOMBRE */}
+              <div className="w-full max-w-md mx-auto flex flex-col gap-2 mt-1">
+                <div className="relative">
+                  <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Escribe el nombre del Pokémon para añadir..."
+                    value={emptySlotSearchQuery}
+                    onChange={e => setEmptySlotSearchQuery(e.target.value)}
+                    className="w-full py-2.5 pl-10 pr-9 text-xs sm:text-sm font-medium bg-slate-900 border border-slate-700 focus:border-emerald-500 rounded-xl text-white placeholder-slate-500 focus:outline-none transition-colors shadow-inner"
+                  />
+                  {emptySlotSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setEmptySlotSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-white"
+                      title="Borrar texto"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+
+                {/* RESULTADOS DINÁMICOS POR NOMBRE */}
+                {emptySlotSearchQuery.trim().length > 0 && (
+                  <div className="max-h-60 overflow-y-auto rounded-xl bg-slate-900/95 border border-slate-700/80 p-1 flex flex-col gap-1 text-left shadow-2xl">
+                    {(() => {
+                      const q = emptySlotSearchQuery.trim().toLowerCase();
+                      const matches = rawDexList
+                        .filter(p => p.nombre.toLowerCase().includes(q))
+                        .slice(0, 15);
+
+                      if (matches.length === 0) {
+                        return (
+                          <div className="py-4 text-center text-xs text-slate-400">
+                            No se encontraron Pokémon con el nombre &quot;{emptySlotSearchQuery}&quot;
+                          </div>
+                        );
+                      }
+
+                      return matches.map(pk => {
+                        const dNum = pk.num;
+                        const sStyle = dNum > 0 ? getPokemonShowdownSpriteStyle(pk.id || dNum) : {};
+                        return (
+                          <button
+                            key={pk.id}
+                            type="button"
+                            onClick={() => {
+                              handleSelectPokemonForSlot(activeSlot, pk.id);
+                              setEmptySlotSearchQuery('');
+                            }}
+                            className="flex items-center justify-between p-2 rounded-lg bg-slate-950/70 hover:bg-emerald-950/70 border border-slate-800 hover:border-emerald-600/70 transition-colors text-left group cursor-pointer"
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-9 h-7 flex-shrink-0 flex items-center justify-center" style={sStyle} />
+                              <div className="flex flex-col min-w-0">
+                                <span className="text-xs font-bold text-white group-hover:text-emerald-300 truncate">
+                                  #{dNum} {pk.nombre}
+                                </span>
+                                <span className="text-[10px] text-slate-400">
+                                  {typeName(pk.tipo1)}{pk.tipo2 ? ` / ${typeName(pk.tipo2)}` : ''} · Gen {pk.generation}
+                                </span>
+                              </div>
+                            </div>
+                            <span className="text-[10px] font-bold px-2 py-1 rounded bg-emerald-600/80 group-hover:bg-emerald-500 text-white shrink-0">
+                              Añadir
+                            </span>
+                          </button>
+                        );
+                      });
+                    })()}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </section>
-      )}
+
+        {/* CUADRO DE ESTRATEGIA O NOTAS DEL EQUIPO (SÓLO EN APARTADO EQUIPO) */}
+        <section className="bg-slate-950/90 p-3 sm:p-4 rounded-2xl border border-slate-800 flex flex-col gap-2.5 shadow-xl">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+            <div className="flex items-center gap-2">
+              <Brain size={16} className="text-pink-400" />
+              <span className="text-xs sm:text-sm font-bold text-white">
+                Estrategia o Notas del Equipo
+              </span>
+            </div>
+
+            <button
+              type="button"
+              className="icon-button"
+              onClick={() => setIsStrategyCollapsed(!isStrategyCollapsed)}
+              title={isStrategyCollapsed ? 'Expandir' : 'Colapsar'}
+            >
+              {isStrategyCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+            </button>
+          </div>
+
+          {!isStrategyCollapsed && (
+            <div className="flex flex-col gap-2">
+              <textarea
+                rows={3}
+                placeholder="Ej: Quiero un equipo Hyper Offense con Volcarona... o 'Garchomp me causa problemas' o '¿Puede Cloyster ser mi sweeper físico?'..."
+                value={currentTeam.strategyNotes || ''}
+                onChange={e => updateTeamStrategy(e.target.value)}
+                className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-pink-500 transition-colors"
+              />
+              <div className="flex items-center justify-between text-[11px] text-slate-400 flex-wrap gap-1">
+                <span>
+                  Proveedor IA activo:{' '}
+                  <strong className="text-violet-300">
+                    {AI_PROVIDERS[activeAiProvider]?.name || 'Google Gemini 3'}
+                  </strong>{' '}
+                  <span className="text-slate-500 font-mono">
+                    ({AI_PROVIDERS[activeAiProvider]?.model || 'gemini-3.8-flash'})
+                  </span>
+                </span>
+                <span>
+                  {hasConfiguredApiKey ? (
+                    <span className="text-emerald-400 font-semibold">Clave API configurada ✓</span>
+                  ) : (
+                    <span className="text-amber-400">Sin clave API configurada</span>
+                  )}
+                </span>
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* BOTÓN DE CONSULTAR CON IA SEPARADO AL FINAL DE LA PÁGINA (SÓLO EN APARTADO EQUIPO) */}
+        <div className="flex justify-end pt-1">
+          <button
+            type="button"
+            disabled={isAiLoading}
+            onClick={() => executeAiAnalysis()}
+            className="w-full sm:w-auto py-3 px-6 rounded-xl font-bold text-xs sm:text-sm bg-gradient-to-r from-violet-600 via-purple-600 to-pink-600 hover:from-violet-500 hover:to-pink-500 text-white flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 transition-all cursor-pointer hover:shadow-violet-500/25 active:scale-[0.99]"
+          >
+            {isAiLoading ? (
+              <>
+                <Loader2 size={16} className="animate-spin text-pink-200" />
+                <span>Analizando equipo con IA...</span>
+              </>
+            ) : (
+              <>
+                <Brain size={16} className="text-pink-200" />
+                <span>Consultar con IA (Google Gemini 3)</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    )}
 
       {/* SUB-TAB 2: [ TIPOS ] - Team Weaknesses, Resistances & Immunities */}
       {activeTab === 'tipos' && (
-        <section className="bg-[#121519] p-3 sm:p-5 rounded-2xl border border-slate-800 shadow-xl min-h-[300px]">
+        <section className="bg-[#121519] p-3 sm:p-5 rounded-2xl border border-slate-800 shadow-xl min-h-[300px] flex flex-col gap-4">
+          {/* HEADER CON ALTERNADOR MODO SIMPLE / MODO DETALLADO */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-800 gap-2">
+            <div>
+              <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                <span>Análisis de Tipos</span>
+                <span className="text-xs text-slate-400 font-normal">
+                  ({tiposMode === 'simple' ? 'Resumen rápido' : 'Matriz defensiva & cobertura de ataques'})
+                </span>
+              </h3>
+            </div>
+
+            {/* Alternador / Switch de Modo */}
+            <div className="inline-flex rounded-xl p-1 bg-slate-900 border border-slate-700/80 self-start sm:self-auto shadow-inner">
+              <button
+                type="button"
+                className={`py-1.5 px-3.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  tiposMode === 'simple'
+                    ? 'bg-emerald-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                }`}
+                onClick={() => setTiposMode('simple')}
+              >
+                Modo Simple
+              </button>
+              <button
+                type="button"
+                className={`py-1.5 px-3.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  tiposMode === 'detallado'
+                    ? 'bg-emerald-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                }`}
+                onClick={() => setTiposMode('detallado')}
+              >
+                Modo Detallado
+              </button>
+            </div>
+          </div>
+
           {tiposData.filledMembers.length === 0 ? (
             <div className="py-12 text-center text-slate-400 text-sm">
-              Añade Pokémon a tu equipo en la pestaña <span className="font-bold text-white">Equipo</span> para ver sus debilidades, resistencias e inmunidades.
+              Añade Pokémon a tu equipo en la pestaña <span className="font-bold text-white">Equipo</span> para ver sus debilidades, resistencias y coberturas elementales.
             </div>
-          ) : (
+          ) : tiposMode === 'simple' ? (
+            /* MODO SIMPLE: RESISTENCIAS, DEBILIDADES E INMUNIDADES (3 COLUMNAS) */
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6 w-full">
               {/* COLUMNA 1: RESISTENTE A: */}
               <div className="flex flex-col">
@@ -2134,6 +2510,236 @@ Estructura tu respuesta en Markdown limpio, con buena jerarquía y emojis visual
                   {tiposData.immuneRows.length === 0 && (
                     <div className="text-xs text-slate-500 italic py-2">Ninguna inmunidad</div>
                   )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* MODO DETALLADO: MATRIZ DEFENSIVA Y COBERTURA DE MOVIMIENTOS POR TIPO */
+            <div className="flex flex-col gap-6">
+              {/* 1. MATRIZ DEFENSIVA DE TIPOS DETALLADA */}
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Shield size={16} className="text-emerald-400" />
+                    <h4 className="text-sm font-bold text-white uppercase tracking-wider">
+                      1. Cobertura Defensiva Detallada (17 Tipos vs Integrantes)
+                    </h4>
+                  </div>
+                  {/* LEYENDA */}
+                  <div className="flex items-center gap-1 flex-wrap text-[10px]">
+                    <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">0× Inmune</span>
+                    <span className="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-600">¼× Doble Res.</span>
+                    <span className="px-1.5 py-0.5 rounded bg-emerald-900/60 text-emerald-200 border border-emerald-600/60">½× Resiste</span>
+                    <span className="px-1.5 py-0.5 rounded bg-slate-900 text-slate-400 border border-slate-800">1× Neutro</span>
+                    <span className="px-1.5 py-0.5 rounded bg-amber-950/90 text-amber-300 border border-amber-600">2× Débil</span>
+                    <span className="px-1.5 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-500 font-bold">4× Doble Deb.</span>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-slate-800 bg-[#161a20]">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-900/90 border-b border-slate-800 text-slate-300">
+                        <th className="py-2.5 px-3 font-bold w-28">Tipo Ataque</th>
+                        {tiposData.filledMembers.map(m => {
+                          const dex = getDexForMember(m);
+                          const dexNum = dex?.num || getPokemonDexNum(m.pokemonId) || getPokemonDexNum(m.nombre);
+                          const sStyle = dexNum > 0 ? getPokemonShowdownSpriteStyle(m.pokemonId || dexNum) : {};
+                          return (
+                            <th key={m.id} className="py-2 px-2 text-center font-bold">
+                              <div className="flex flex-col items-center justify-center">
+                                <div className="w-8 h-6 flex items-center justify-center" style={sStyle} />
+                                <span className="text-[11px] text-white truncate max-w-[80px]">
+                                  {m.nombre || dex?.nombre || 'Pokémon'}
+                                </span>
+                              </div>
+                            </th>
+                          );
+                        })}
+                        <th className="py-2.5 px-3 text-center font-bold text-slate-400 w-28">Balance</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60">
+                      {POKETYPE_ORDER.map(atkTypeId => {
+                        const pInfo = POKETYPE_MAP[atkTypeId] || { abbrev: atkTypeId.slice(0, 4), bg: '#555', name: atkTypeId };
+                        let weakCount = 0;
+                        let resCount = 0;
+                        let immuneCount = 0;
+
+                        return (
+                          <tr key={atkTypeId} className="hover:bg-slate-850/60 transition-colors">
+                            {/* TIPO */}
+                            <td className="py-2 px-3 font-semibold text-white">
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className="w-10 py-0.5 text-center text-[11px] font-bold rounded text-white shadow-sm"
+                                  style={{ backgroundColor: pInfo.bg }}
+                                >
+                                  {pInfo.abbrev}
+                                </span>
+                                <span className="text-xs text-slate-300 hidden sm:inline">{pInfo.name}</span>
+                              </div>
+                            </td>
+
+                            {/* CADA POKÉMON DEL EQUIPO */}
+                            {tiposData.filledMembers.map(m => {
+                              const dex = getDexForMember(m);
+                              const mult = dex
+                                ? getDefensiveMultiplier(
+                                    dex.tipo1,
+                                    dex.tipo2,
+                                    atkTypeId,
+                                    m.ability,
+                                    m.pokemonId || m.nombre,
+                                    dex.abilities
+                                  )
+                                : 1;
+
+                              if (mult === 0) immuneCount++;
+                              else if (mult < 1) resCount++;
+                              else if (mult > 1) weakCount++;
+
+                              const multLabel =
+                                mult === 0
+                                  ? '0×'
+                                  : mult === 0.25
+                                  ? '¼×'
+                                  : mult === 0.5
+                                  ? '½×'
+                                  : mult === 1
+                                  ? '1×'
+                                  : mult === 2
+                                  ? '2×'
+                                  : `${mult}×`;
+
+                              const badgeClass =
+                                mult === 0
+                                  ? 'bg-slate-800 text-slate-400 border-slate-700'
+                                  : mult <= 0.25
+                                  ? 'bg-emerald-950 text-emerald-300 border-emerald-500 font-bold'
+                                  : mult === 0.5
+                                  ? 'bg-emerald-900/60 text-emerald-200 border-emerald-600/60'
+                                  : mult === 1
+                                  ? 'bg-slate-900/40 text-slate-500 border-transparent'
+                                  : mult === 2
+                                  ? 'bg-amber-950/80 text-amber-300 border-amber-500/70 font-bold'
+                                  : 'bg-rose-950 text-rose-300 border-rose-500 font-black';
+
+                              return (
+                                <td key={m.id} className="py-2 px-2 text-center">
+                                  <span
+                                    className={`inline-block min-w-[34px] py-0.5 px-1.5 rounded text-[11px] border font-mono ${badgeClass}`}
+                                  >
+                                    {multLabel}
+                                  </span>
+                                </td>
+                              );
+                            })}
+
+                            {/* BALANCE */}
+                            <td className="py-2 px-3 text-center text-[11px]">
+                              <div className="flex items-center justify-center gap-1.5 font-bold">
+                                {weakCount > 0 && (
+                                  <span className="text-rose-400">-{weakCount}</span>
+                                )}
+                                {(resCount > 0 || immuneCount > 0) && (
+                                  <span className="text-emerald-400">+{resCount + immuneCount}</span>
+                                )}
+                                {weakCount === 0 && resCount === 0 && immuneCount === 0 && (
+                                  <span className="text-slate-500">0</span>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* 2. COBERTURA DE MOVIMIENTOS POR TIPOS DEL EQUIPO (OFENSIVA) */}
+              <div className="flex flex-col gap-3 pt-4 border-t border-slate-800">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Swords size={16} className="text-amber-400" />
+                    <h4 className="text-sm font-bold text-white uppercase tracking-wider">
+                      2. Cobertura de Movimientos por Tipos del Equipo (Ofensiva)
+                    </h4>
+                  </div>
+                  {(() => {
+                    const coveredCount = moveCoverageByDefendingType.filter(r => r.hits.length > 0).length;
+                    return (
+                      <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-900 border border-slate-700 text-slate-200">
+                        {coveredCount} de 17 tipos rivales cubiertos con daño supereficaz
+                      </span>
+                    );
+                  })()}
+                </div>
+
+                <p className="text-xs text-slate-400">
+                  Evalúa si los 4 movimientos ofensivos de tus integrantes golpean con ventaja elemental (daño ×2) a cada tipo defensor en el metagame de PokéMMO:
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                  {moveCoverageByDefendingType.map(row => {
+                    const isCovered = row.hits.length > 0;
+
+                    return (
+                      <div
+                        key={row.typeId}
+                        className={`p-2.5 rounded-xl border flex flex-col gap-1.5 ${
+                          isCovered
+                            ? 'bg-slate-950/70 border-slate-800'
+                            : 'bg-rose-950/20 border-rose-800/40'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="w-12 py-0.5 text-center text-xs font-bold rounded text-white shadow"
+                              style={{ backgroundColor: row.pInfo.bg }}
+                            >
+                              {row.pInfo.abbrev}
+                            </span>
+                            <span className="text-xs font-bold text-white">
+                              Contra tipo {row.pInfo.name}
+                            </span>
+                          </div>
+
+                          {isCovered ? (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-500/60">
+                              ✓ {row.hits.length} supereficaz{row.hits.length > 1 ? 'es' : ''}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-950/80 text-rose-300 border border-rose-600/60">
+                              ⚠️ Sin cobertura supereficaz
+                            </span>
+                          )}
+                        </div>
+
+                        {/* LISTA DE ATAQUES QUE CUBREN ESTE TIPO */}
+                        {isCovered ? (
+                          <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                            {row.hits.map((hit, idx) => (
+                              <span
+                                key={idx}
+                                className="inline-flex items-center gap-1 py-0.5 px-2 rounded-md bg-slate-900 border border-slate-700/80 text-[11px] text-slate-200"
+                              >
+                                <span className="font-semibold text-white">{hit.memberName}:</span>
+                                <span className="text-amber-300 font-medium">{hit.moveName}</span>
+                                <span className="text-[9px] text-slate-400 font-mono">({typeName(hit.moveType)} 2×)</span>
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-rose-300/80 italic">
+                            Ningún Pokémon del equipo tiene un movimiento que golpee supereficaz a tipo {row.pInfo.name}.
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -2255,77 +2861,7 @@ Estructura tu respuesta en Markdown limpio, con buena jerarquía y emojis visual
         </section>
       )}
 
-      {/* CUADRO DE ESTRATEGIA O NOTAS DEL EQUIPO AL FINAL DE LA PÁGINA */}
-      <section className="bg-slate-950/90 p-3 sm:p-4 rounded-2xl border border-slate-800 flex flex-col gap-2.5 shadow-xl">
-        <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-          <div className="flex items-center gap-2">
-            <Brain size={16} className="text-pink-400" />
-            <span className="text-xs sm:text-sm font-bold text-white">
-              Estrategia o Notas del Equipo
-            </span>
-          </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              disabled={isAiLoading}
-              onClick={() => executeAiAnalysis()}
-              className="py-1.5 px-3 rounded-xl font-bold text-xs bg-gradient-to-r from-violet-600 to-pink-600 hover:from-violet-500 hover:to-pink-500 text-white flex items-center gap-1.5 shadow disabled:opacity-50 transition-all cursor-pointer"
-            >
-              {isAiLoading ? (
-                <>
-                  <Loader2 size={14} className="animate-spin text-pink-200" />
-                  <span>Analizando...</span>
-                </>
-              ) : (
-                <>
-                  <Brain size={14} className="text-pink-200" />
-                  <span>Consultar con ai</span>
-                </>
-              )}
-            </button>
-
-            <button
-              type="button"
-              className="icon-button"
-              onClick={() => setIsStrategyCollapsed(!isStrategyCollapsed)}
-              title={isStrategyCollapsed ? 'Expandir' : 'Colapsar'}
-            >
-              {isStrategyCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
-            </button>
-          </div>
-        </div>
-
-        {!isStrategyCollapsed && (
-          <div className="flex flex-col gap-2">
-            <textarea
-              rows={3}
-              placeholder="Ej: Quiero un equipo Hyper Offense alrededor de Volcarona, con soporte de Trampa Rocas y cobertura contra climas de lluvia y arena..."
-              value={currentTeam.strategyNotes || ''}
-              onChange={e => updateTeamStrategy(e.target.value)}
-              className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-pink-500 transition-colors"
-            />
-            <div className="flex items-center justify-between text-[11px] text-slate-400">
-              <span>
-                Proveedor activo:{' '}
-                <strong className="text-violet-300">
-                  {AI_PROVIDERS[activeAiProvider]?.name || 'Google Gemini'}
-                </strong>{' '}
-                <span className="text-slate-500 font-mono">
-                  ({AI_PROVIDERS[activeAiProvider]?.model || 'gemini-1.5-flash'})
-                </span>
-              </span>
-              <span>
-                {hasConfiguredApiKey ? (
-                  <span className="text-emerald-400 font-semibold">Clave API lista ✓</span>
-                ) : (
-                  <span className="text-amber-400">Sin clave API configurada</span>
-                )}
-              </span>
-            </div>
-          </div>
-        )}
-      </section>
 
       {/* MODAL: POKEMON SELECTION SEARCH (Full-featured dedicated search modal with high visibility) */}
       {showChangePokemonModal && (
@@ -3010,7 +3546,7 @@ Estructura tu respuesta en Markdown limpio, con buena jerarquía y emojis visual
             </p>
 
             <div className="grid grid-cols-1 gap-2.5">
-              {/* OPCIÓN 1: ALMACENAMIENTO INTERNO */}
+              {/* OPCIÓN 1: ALMACENAMIENTO LOCAL / INTERNO */}
               <button
                 type="button"
                 className="flex items-start gap-3 p-3 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700 hover:border-emerald-500 text-left transition-all group"
@@ -3021,13 +3557,13 @@ Estructura tu respuesta en Markdown limpio, con buena jerarquía y emojis visual
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-bold text-white group-hover:text-emerald-300 flex items-center gap-1.5">
-                    <span>Almacenamiento Interno (Carpeta de la App)</span>
+                    <span>Almacenamiento Local (Carpeta de la App)</span>
                     <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-600/30 text-emerald-300 font-normal">
                       PokeMMO_Equipos
                     </span>
                   </div>
                   <div className="text-[11px] text-slate-400 mt-0.5">
-                    Guarda el equipo en la carpeta creada por la app en la memoria de tu dispositivo para tener acceso directo y permanente.
+                    Guarda el archivo en el almacenamiento local de tu dispositivo para tener acceso offline permanente.
                   </div>
                 </div>
               </button>
@@ -3037,60 +3573,22 @@ Estructura tu respuesta en Markdown limpio, con buena jerarquía y emojis visual
                 type="button"
                 className="flex items-start gap-3 p-3 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700 hover:border-sky-500 text-left transition-all group"
                 onClick={handleExportToGoogleDrive}
+                disabled={isDriveLoading}
               >
                 <div className="w-10 h-10 rounded-xl bg-sky-950/80 border border-sky-600/80 flex items-center justify-center text-sky-400 shrink-0 group-hover:scale-105 transition-transform">
-                  <Cloud size={20} />
+                  {isDriveLoading ? <Loader2 size={20} className="animate-spin" /> : <Cloud size={20} />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-bold text-white group-hover:text-sky-300 flex items-center gap-1.5">
                     <span>Exportar a Google Drive</span>
                     <span className="text-[10px] px-1.5 py-0.2 rounded bg-sky-600/30 text-sky-300 font-normal">
-                      Nube
+                      {googleUser ? 'Sincronizar' : 'Conectar'}
                     </span>
                   </div>
                   <div className="text-[11px] text-slate-400 mt-0.5">
-                    Sube o guarda el archivo directamente en tu Google Drive para sincronizarlo o compartirlo con otros dispositivos.
-                  </div>
-                </div>
-              </button>
-
-              {/* OPCIÓN 3: DESCARGA DIRECTA JSON */}
-              <button
-                type="button"
-                className="flex items-start gap-3 p-3 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700 hover:border-cyan-500 text-left transition-all group"
-                onClick={() => {
-                  handleDirectDownloadJson();
-                  setShowExportModal(false);
-                }}
-              >
-                <div className="w-10 h-10 rounded-xl bg-cyan-950/80 border border-cyan-600/80 flex items-center justify-center text-cyan-400 shrink-0 group-hover:scale-105 transition-transform">
-                  <Download size={20} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-bold text-white group-hover:text-cyan-300">
-                    Descargar Archivo (.json)
-                  </div>
-                  <div className="text-[11px] text-slate-400 mt-0.5">
-                    Descarga directa a tu carpeta de descargas para respaldar o transferir tu equipo.
-                  </div>
-                </div>
-              </button>
-
-              {/* OPCIÓN 4: COPIAR FORMATO SHOWDOWN */}
-              <button
-                type="button"
-                className="flex items-start gap-3 p-3 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700 hover:border-amber-500 text-left transition-all group"
-                onClick={handleCopyShowdown}
-              >
-                <div className="w-10 h-10 rounded-xl bg-amber-950/80 border border-amber-600/80 flex items-center justify-center text-amber-400 shrink-0 group-hover:scale-105 transition-transform">
-                  <Copy size={20} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-bold text-white group-hover:text-amber-300">
-                    Copiar Formato PokeMMO / Showdown (.txt)
-                  </div>
-                  <div className="text-[11px] text-slate-400 mt-0.5">
-                    Copia el texto del equipo para pegarlo directamente en el juego PokeMMO o Pokémon Showdown.
+                    {googleUser
+                      ? `Sube y sincroniza directamente a tu cuenta (${googleUser.email}).`
+                      : 'Guarda y sincroniza el equipo en tu Google Drive para respaldar y compartir.'}
                   </div>
                 </div>
               </button>
@@ -3109,7 +3607,7 @@ Estructura tu respuesta en Markdown limpio, con buena jerarquía y emojis visual
         </div>
       )}
 
-      {/* MODAL: IMPORTAR EQUIPO (Archivo o texto Showdown) */}
+      {/* MODAL: IMPORTAR EQUIPO (GOOGLE DRIVE O ALMACENAMIENTO LOCAL) */}
       {showImportModal && (
         <div
           className="modal-backdrop z-50 fixed inset-0 bg-black/80 flex items-center justify-center p-3 overflow-y-auto"
@@ -3119,9 +3617,10 @@ Estructura tu respuesta en Markdown limpio, con buena jerarquía y emojis visual
             className="modal w-full max-w-lg p-5 bg-slate-950 rounded-2xl border border-slate-700 shadow-2xl flex flex-col gap-4 text-xs"
             onClick={e => e.stopPropagation()}
           >
+            {/* MODAL HEADER */}
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2">
-                <Upload size={18} className="text-emerald-400" />
+                <Download size={18} className="text-emerald-400" />
                 <span className="text-sm font-bold text-white">
                   Importar e Implementar Equipo
                 </span>
@@ -3135,59 +3634,212 @@ Estructura tu respuesta en Markdown limpio, con buena jerarquía y emojis visual
               </button>
             </div>
 
-            <p className="text-xs text-slate-300">
-              Carga un archivo de tu dispositivo o pega el texto en formato Showdown/PokeMMO. El equipo se implementará y activará inmediatamente en la app.
-            </p>
-
-            {/* BOTÓN PARA SUBIR ARCHIVO */}
-            <div className="p-4 rounded-xl border border-dashed border-emerald-500/50 bg-emerald-950/20 flex flex-col items-center justify-center gap-2 text-center">
-              <Upload size={24} className="text-emerald-400" />
-              <div className="text-xs font-bold text-white">
-                Cargar Archivo desde tu Dispositivo
-              </div>
-              <div className="text-[11px] text-slate-400">
-                Formatos compatibles: .json, .txt, .poketeam
-              </div>
+            {/* SELECTION TABS: GOOGLE DRIVE vs ALMACENAMIENTO LOCAL */}
+            <div className="grid grid-cols-2 rounded-xl overflow-hidden border border-slate-700/80 bg-slate-900 shadow-inner">
               <button
                 type="button"
-                className="mt-1 py-2 px-4 rounded-xl font-bold text-xs bg-emerald-600 hover:bg-emerald-500 text-white shadow flex items-center gap-2"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <FolderOpen size={14} />
-                <span>Explorar Archivos</span>
-              </button>
-            </div>
-
-            {/* O PEGAR TEXTO */}
-            <div className="flex flex-col gap-2">
-              <label className="text-xs font-bold text-slate-300 flex items-center justify-between">
-                <span>O pega el texto del equipo (Showdown / PokeMMO):</span>
-              </label>
-              <textarea
-                rows={5}
-                className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-200 font-mono text-xs focus:outline-none focus:border-emerald-500"
-                placeholder={`Rotom-Wash @ Leftovers\nAbility: Levitate\nEVs: 252 HP / 252 Def / 4 SpD\nBold Nature\n- Volt Switch\n- Hydro Pump\n- Will-O-Wisp\n- Pain Split`}
-                value={importPasteText}
-                onChange={e => setImportPasteText(e.target.value)}
-              />
-              <button
-                type="button"
-                disabled={!importPasteText.trim()}
-                className={`py-2 px-4 rounded-xl font-bold text-xs shadow flex items-center justify-center gap-2 transition-all ${
-                  importPasteText.trim()
-                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer'
-                    : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                className={`py-2 px-3 text-center font-bold text-xs flex items-center justify-center gap-1.5 transition-colors ${
+                  importSourceTab === 'drive'
+                    ? 'bg-sky-600 text-white shadow'
+                    : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800'
                 }`}
                 onClick={() => {
-                  handleImportContent(importPasteText, 'Equipo Pegado');
-                  setImportPasteText('');
-                  setShowImportModal(false);
+                  setImportSourceTab('drive');
+                  if (driveToken) refreshDriveFiles();
                 }}
               >
-                <Check size={14} />
-                <span>Implementar Equipo Pegado</span>
+                <Cloud size={14} />
+                <span>Google Drive</span>
+              </button>
+              <button
+                type="button"
+                className={`py-2 px-3 text-center font-bold text-xs flex items-center justify-center gap-1.5 transition-colors border-l border-slate-700/60 ${
+                  importSourceTab === 'local'
+                    ? 'bg-emerald-600 text-white shadow'
+                    : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800'
+                }`}
+                onClick={() => setImportSourceTab('local')}
+              >
+                <HardDrive size={14} />
+                <span>Almacenamiento Local</span>
               </button>
             </div>
+
+            {/* TAB 1: GOOGLE DRIVE IMPORT */}
+            {importSourceTab === 'drive' && (
+              <div className="flex flex-col gap-3">
+                {!googleUser || !driveToken ? (
+                  <div className="flex flex-col items-center justify-center p-6 text-center gap-3 bg-slate-900/60 rounded-xl border border-slate-800">
+                    <Cloud size={32} className="text-sky-400" />
+                    <div>
+                      <div className="text-xs font-bold text-white">Conecta tu cuenta de Google Drive</div>
+                      <p className="text-[11px] text-slate-400 mt-1 max-w-xs">
+                        Inicia sesión con Google para sincronizar e importar tus equipos guardados en la nube.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="gsi-material-button mt-1"
+                      onClick={handleConnectGoogleDrive}
+                      disabled={isDriveLoading}
+                    >
+                      <div className="gsi-material-button-state"></div>
+                      <div className="gsi-material-button-content-wrapper">
+                        <div className="gsi-material-button-icon">
+                          <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" style={{ display: 'block' }}>
+                            <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
+                            <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
+                            <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
+                            <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
+                          </svg>
+                        </div>
+                        <span className="gsi-material-button-contents">Sign in with Google</span>
+                      </div>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-2.5">
+                    {/* User bar */}
+                    <div className="flex items-center justify-between p-2 rounded-xl bg-sky-950/40 border border-sky-800/40 text-xs text-sky-200">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <Cloud size={14} className="text-sky-400 shrink-0" />
+                        <span className="truncate font-semibold">{googleUser.email || 'Conectado a Google Drive'}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-sky-300 hover:text-white transition-colors"
+                          title="Actualizar lista de archivos"
+                          onClick={() => refreshDriveFiles()}
+                          disabled={isDriveLoading}
+                        >
+                          <RotateCcw size={13} className={isDriveLoading ? 'animate-spin' : ''} />
+                        </button>
+                        <button
+                          type="button"
+                          className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-300"
+                          onClick={handleDisconnectGoogleDrive}
+                        >
+                          Cerrar sesión
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Files list */}
+                    {isDriveLoading ? (
+                      <div className="py-8 flex flex-col items-center justify-center gap-2 text-slate-400">
+                        <Loader2 size={24} className="animate-spin text-sky-400" />
+                        <span className="text-xs">Consultando tus equipos en Google Drive...</span>
+                      </div>
+                    ) : driveFiles.length === 0 ? (
+                      <div className="p-6 text-center text-slate-400 bg-slate-900/60 rounded-xl border border-slate-800 flex flex-col items-center gap-2">
+                        <Cloud size={28} className="text-slate-500" />
+                        <p className="text-xs font-semibold text-white">No hay equipos en Google Drive</p>
+                        <p className="text-[11px] text-slate-400 max-w-xs">
+                          Exporta tu equipo actual usando el botón de exportar (flecha hacia arriba) y seleccionando Google Drive.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-1.5 max-h-56 overflow-y-auto pr-1">
+                        {driveFiles.map(file => (
+                          <div
+                            key={file.id}
+                            className="flex items-center justify-between p-2 rounded-xl bg-slate-900/90 border border-slate-700 hover:border-sky-500 transition-colors gap-2"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <FileSpreadsheet size={16} className="text-sky-400 shrink-0" />
+                              <div className="min-w-0">
+                                <div className="text-xs font-bold text-white truncate">
+                                  {file.name.replace(/\.poketeam\.json$/, '')}
+                                </div>
+                                <div className="text-[10px] text-slate-400">
+                                  {new Date(file.modifiedTime).toLocaleDateString()}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                className="py-1 px-2.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs flex items-center gap-1 shadow"
+                                onClick={() => handleImportFromDrive(file)}
+                                disabled={isDriveLoading}
+                              >
+                                <Download size={12} />
+                                <span>Importar</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="p-1 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-950/60 transition-colors"
+                                title="Eliminar de Google Drive"
+                                onClick={() => setDriveFileToDelete(file)}
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB 2: ALMACENAMIENTO LOCAL IMPORT */}
+            {importSourceTab === 'local' && (
+              <div className="flex flex-col gap-3">
+                {/* BOTÓN PARA SUBIR ARCHIVO */}
+                <div className="p-4 rounded-xl border border-dashed border-emerald-500/50 bg-emerald-950/20 flex flex-col items-center justify-center gap-2 text-center">
+                  <Download size={22} className="text-emerald-400" />
+                  <div className="text-xs font-bold text-white">
+                    Cargar Archivo desde tu Almacenamiento Local
+                  </div>
+                  <div className="text-[11px] text-slate-400">
+                    Formatos compatibles: .json, .txt, .poketeam
+                  </div>
+                  <button
+                    type="button"
+                    className="mt-1 py-2 px-4 rounded-xl font-bold text-xs bg-emerald-600 hover:bg-emerald-500 text-white shadow flex items-center gap-2 cursor-pointer"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <FolderOpen size={14} />
+                    <span>Explorar Archivos Locales</span>
+                  </button>
+                </div>
+
+                {/* O PEGAR TEXTO */}
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-bold text-slate-300 flex items-center justify-between">
+                    <span>O pega el texto del equipo (Showdown / PokeMMO):</span>
+                  </label>
+                  <textarea
+                    rows={4}
+                    className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-200 font-mono text-xs focus:outline-none focus:border-emerald-500"
+                    placeholder={`Rotom-Wash @ Leftovers\nAbility: Levitate\nEVs: 252 HP / 252 Def / 4 SpD\nBold Nature\n- Volt Switch\n- Hydro Pump\n- Will-O-Wisp\n- Pain Split`}
+                    value={importPasteText}
+                    onChange={e => setImportPasteText(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    disabled={!importPasteText.trim()}
+                    className={`py-2 px-4 rounded-xl font-bold text-xs shadow flex items-center justify-center gap-2 transition-all ${
+                      importPasteText.trim()
+                        ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer'
+                        : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                    }`}
+                    onClick={() => {
+                      handleImportContent(importPasteText, 'Equipo Pegado');
+                      setImportPasteText('');
+                      setShowImportModal(false);
+                    }}
+                  >
+                    <Check size={14} />
+                    <span>Implementar Equipo Pegado</span>
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="flex justify-end pt-2 border-t border-slate-800">
               <button
@@ -3196,6 +3848,44 @@ Estructura tu respuesta en Markdown limpio, con buena jerarquía y emojis visual
                 onClick={() => setShowImportModal(false)}
               >
                 Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CONFIRMACIÓN DE ELIMINACIÓN DE GOOGLE DRIVE (OBLIGATORIA POR PROTOCOLO WORKSPACE) */}
+      {driveFileToDelete && (
+        <div
+          className="modal-backdrop z-50 fixed inset-0 bg-black/85 flex items-center justify-center p-3"
+          onClick={() => setDriveFileToDelete(null)}
+        >
+          <div
+            className="modal w-full max-w-sm p-4 bg-slate-950 rounded-2xl border border-rose-500/60 shadow-2xl flex flex-col gap-3 text-xs"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 text-rose-300 font-bold text-sm">
+              <AlertCircle size={18} />
+              <span>¿Eliminar de Google Drive?</span>
+            </div>
+            <p className="text-xs text-slate-300">
+              ¿Estás seguro de que deseas eliminar permanentemente el archivo <strong className="text-white">{driveFileToDelete.name}</strong> de tu Google Drive?
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setDriveFileToDelete(null)}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="py-1.5 px-3 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold"
+                onClick={handleConfirmDeleteDriveFile}
+                disabled={isDriveLoading}
+              >
+                Eliminar
               </button>
             </div>
           </div>

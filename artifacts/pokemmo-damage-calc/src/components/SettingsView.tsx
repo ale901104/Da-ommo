@@ -53,71 +53,50 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 }) => {
   return (
     <div className="flex flex-col gap-3">
-      {/* HEADER CARD */}
-      <section className="glass combat-card" aria-label="Configuración">
-        <div className="section-head">
-          <div className="flex items-center gap-2">
-            <Settings size={18} className="text-emerald-400" />
-            <span className="section-title">Configuración · Apariencia & Fondo</span>
-          </div>
-        </div>
-
-        <p className="text-xs text-slate-300 mt-1">
-          Personaliza la estética de la app: alterna entre modo oscuro o modo día y elige fondos oficiales o sube tus propios fondos de pantalla.
-        </p>
-      </section>
-
-      {/* SECTION 1: MODO OSCURO & MODO DÍA */}
+      {/* SECTION 1: MODO OSCURO & MODO DÍA (SWITCH TOGGLE) */}
       <section className="glass combat-card" aria-label="Modo de color">
-        <div className="section-head">
-          <div className="flex items-center gap-2">
-            <Palette size={16} className="text-indigo-400" />
-            <strong className="text-sm text-white font-bold">Modo oscuro & Modo día</strong>
+        <div className="flex items-center justify-between py-1">
+          <div className="flex items-center gap-2.5">
+            <div
+              className={`p-2 rounded-xl border transition-colors ${
+                theme === 'dark'
+                  ? 'bg-indigo-950/70 border-indigo-700/60 text-indigo-300'
+                  : 'bg-amber-100 border-amber-300 text-amber-600'
+              }`}
+            >
+              {theme === 'dark' ? <Moon size={18} /> : <Sun size={18} />}
+            </div>
+            <div className="flex flex-col">
+              <span className="text-sm font-bold text-white">
+                {theme === 'dark' ? 'Modo Oscuro' : 'Modo Día'}
+              </span>
+              <span className="text-[11px] text-slate-400">
+                {theme === 'dark' ? 'Tema oscuro activo' : 'Tema claro activo'}
+              </span>
+            </div>
           </div>
-          <span className="ko-badge">
-            {theme === 'dark' ? 'Modo Oscuro Activo' : 'Modo Día Activo'}
-          </span>
-        </div>
 
-        <p className="text-xs text-slate-300 mt-1 mb-3">
-          Elige el modo visual que prefieras. El modo oscuro está optimizado para sesiones nocturnas y pantallas OLED; el modo día ofrece máxima legibilidad bajo el sol.
-        </p>
-
-        <div className="grid grid-cols-2 gap-2.5">
+          {/* Switch Toggle */}
           <button
             type="button"
-            className={`p-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-bold transition-all ${
-              theme === 'dark'
-                ? 'bg-slate-900 border-emerald-500 text-emerald-300 shadow-md ring-1 ring-emerald-500'
-                : 'bg-slate-800/50 border-slate-700/60 text-slate-300 hover:bg-slate-800'
-            }`}
+            role="switch"
+            aria-checked={theme === 'dark'}
+            aria-label="Alternar entre modo oscuro y modo día"
             onClick={() => {
-              if (theme !== 'dark') {
-                onToggleTheme();
-                onToast('Modo oscuro activado.');
-              }
+              onToggleTheme();
+              onToast(theme === 'dark' ? 'Modo día activado.' : 'Modo oscuro activado.');
             }}
-          >
-            <Moon size={16} />
-            <span>Modo Oscuro</span>
-          </button>
-
-          <button
-            type="button"
-            className={`p-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-bold transition-all ${
-              theme === 'light'
-                ? 'bg-slate-100 border-emerald-600 text-emerald-800 shadow-md ring-1 ring-emerald-600'
-                : 'bg-slate-800/50 border-slate-700/60 text-slate-300 hover:bg-slate-800'
+            className={`relative inline-flex h-8 w-16 items-center rounded-full p-1 transition-colors duration-300 cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500/50 ${
+              theme === 'dark' ? 'bg-indigo-600 border border-indigo-400/50' : 'bg-amber-400 border border-amber-500/60'
             }`}
-            onClick={() => {
-              if (theme !== 'light') {
-                onToggleTheme();
-                onToast('Modo día activado.');
-              }
-            }}
           >
-            <Sun size={16} />
-            <span>Modo Día</span>
+            <span
+              className={`inline-flex items-center justify-center h-6 w-6 transform rounded-full bg-slate-950 shadow-md transition-transform duration-300 ${
+                theme === 'dark' ? 'translate-x-8 text-indigo-300' : 'translate-x-0 bg-white text-amber-500'
+              }`}
+            >
+              {theme === 'dark' ? <Moon size={13} /> : <Sun size={13} />}
+            </span>
           </button>
         </div>
       </section>
@@ -247,13 +226,13 @@ export interface AiProviderConfig {
 export const AI_PROVIDERS: Record<AiProvider, AiProviderConfig> = {
   gemini: {
     id: 'gemini',
-    name: 'Google Gemini',
-    model: 'gemini-1.5-flash',
+    name: 'Google Gemini 3',
+    model: 'gemini-3.8-flash',
     placeholder: 'AIzaSy...',
     apiKeyHelpUrl: 'https://aistudio.google.com/app/apikey',
     apiKeyHelpText: 'Obtener en Google AI Studio (Gratis)',
-    badge: 'gemini-1.5-flash',
-    description: 'Recomendado. Rápido y con cuota gratuita generosa para análisis competitivo de PokeMMO.',
+    badge: 'gemini-3.8-flash',
+    description: 'Google Gemini 3 (gemini-3.8-flash). Máximo razonamiento táctico, análisis de movimientos y sinergias competitivas de PokeMMO.',
   },
   openai: {
     id: 'openai',
@@ -402,8 +381,8 @@ export const AiProviderSection: React.FC<AiProviderSectionProps> = ({ onToast })
 
     try {
       if (provider === 'gemini') {
-        // Test Google Gemini
-        const models = ['gemini-1.5-flash', 'gemini-2.5-flash'];
+        // Test Google Gemini 3
+        const models = ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
         for (const model of models) {
           try {
             const resp = await fetch(
@@ -546,7 +525,7 @@ export const AiProviderSection: React.FC<AiProviderSectionProps> = ({ onToast })
               onChange={e => handleProviderChange(e.target.value as AiProvider)}
               className="w-full py-2.5 pl-3 pr-10 text-xs font-bold bg-slate-950 border border-slate-700 rounded-lg text-white appearance-none focus:outline-none focus:border-violet-500 transition-colors cursor-pointer"
             >
-              <option value="gemini">1. Google Gemini (modelo: gemini-1.5-flash)</option>
+              <option value="gemini">1. Google Gemini 3 (modelo: gemini-3.8-flash)</option>
               <option value="openai">2. OpenAI ChatGPT (modelo: gpt-4o-mini)</option>
               <option value="groq">3. Groq (modelo: llama-3.3-70b-versatile)</option>
             </select>

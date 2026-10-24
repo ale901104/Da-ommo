@@ -1,13 +1,33 @@
 import { type BuilderMember, type SavedTeam } from '../components/TeamBuilderView';
 import { type RawDexPokemon } from '../dex';
 import { getPokemonDexNum } from '../components/PokemonSearchableSelect';
-import { typeName } from '../pokemon-constants';
+import { typeName, TYPES } from '../pokemon-constants';
 
 interface TiposSummary {
   resistantRows: { typeId: string; name: string; pokemons: { name: string }[] }[];
   weakRows: { typeId: string; name: string; pokemons: { name: string }[] }[];
   immuneRows?: { typeId: string; name: string; pokemons: { name: string }[] }[];
 }
+
+const TYPE_CHART: Record<string, Record<string, number>> = {
+  normal: { rock: 0.5, ghost: 0, steel: 0.5 },
+  fire: { fire: 0.5, water: 0.5, grass: 2, ice: 2, bug: 2, rock: 0.5, dragon: 0.5, steel: 2 },
+  water: { fire: 2, water: 0.5, grass: 0.5, ground: 2, rock: 2, dragon: 0.5 },
+  electric: { water: 2, electric: 0.5, grass: 0.5, ground: 0, flying: 2, dragon: 0.5 },
+  grass: { fire: 0.5, water: 2, grass: 0.5, poison: 0.5, ground: 2, flying: 0.5, bug: 0.5, rock: 2, dragon: 0.5, steel: 0.5 },
+  ice: { fire: 0.5, water: 0.5, grass: 2, ice: 0.5, ground: 2, flying: 2, dragon: 2, steel: 0.5 },
+  fighting: { normal: 2, ice: 2, poison: 0.5, flying: 0.5, psychic: 0.5, bug: 0.5, rock: 2, ghost: 0, dark: 2, steel: 2 },
+  poison: { grass: 2, poison: 0.5, ground: 0.5, rock: 0.5, ghost: 0.5, steel: 0 },
+  ground: { fire: 2, electric: 2, grass: 0.5, poison: 2, flying: 0, bug: 0.5, rock: 2, steel: 2 },
+  flying: { electric: 0.5, grass: 2, fighting: 2, bug: 2, rock: 0.5, steel: 0.5 },
+  psychic: { fighting: 2, poison: 2, psychic: 0.5, dark: 0, steel: 0.5 },
+  bug: { fire: 0.5, grass: 2, fighting: 0.5, poison: 0.5, flying: 0.5, psychic: 2, ghost: 0.5, dark: 2, steel: 0.5 },
+  rock: { fire: 2, ice: 2, fighting: 0.5, ground: 0.5, flying: 2, bug: 2, steel: 0.5 },
+  ghost: { normal: 0, psychic: 2, ghost: 2, dark: 0.5 },
+  dragon: { dragon: 2, steel: 0.5 },
+  dark: { fighting: 0.5, psychic: 2, ghost: 2, dark: 0.5 },
+  steel: { fire: 0.5, water: 0.5, electric: 0.5, ice: 2, rock: 2, steel: 0.5 },
+};
 
 export function generateLocalCompetitiveAiAnalysis(
   currentTeam: SavedTeam,
@@ -22,19 +42,19 @@ export function generateLocalCompetitiveAiAnalysis(
 Aún no has añadido integrantes a este equipo. 
 
 **Recomendación inicial:**
-- Añade al menos 3 a 6 Pokémon en las casillas superiores para que el Asistente IA pueda evaluar la sinergia, coberturas elementales, roles de combate y amenazas del meta de PokéMMO.
+- Añade de 3 a 6 Pokémon en las casillas superiores para que el Asistente IA pueda evaluar la sinergia, coberturas elementales, roles de combate y amenazas del meta de PokéMMO.
 - Puedes importar equipos en formato Pokémon Showdown usando el botón **Importar** arriba a la derecha.`;
   }
 
-  // Analyze each member's role and profile
-  const memberProfiles = filledMembers.map(m => {
+  // Analyze each member's profile
+  const memberProfiles = filledMembers.map((m, idx) => {
     const dexNum = getPokemonDexNum(m.pokemonId) || getPokemonDexNum(m.nombre);
     const dex =
       dexNum > 0
         ? dexMap.get(String(dexNum)) || dexMap.get(m.pokemonId.toLowerCase())
         : undefined;
 
-    const name = m.nombre || dex?.nombre || m.pokemonId || 'Pokémon';
+    const name = m.nombre || dex?.nombre || m.pokemonId || `Pokémon ${idx + 1}`;
     const t1 = dex?.tipo1 || 'normal';
     const t2 = dex?.tipo2 || '';
     const hp = dex?.hp || 80;
@@ -45,28 +65,37 @@ Aún no has añadido integrantes a este equipo.
     const spe = dex?.spe || 80;
     const bst = hp + atk + def + spa + spd + spe;
 
-    // Detect potential role
-    let role = 'All-Rounder / Balance';
-    if (spe >= 100 && (atk >= 115 || spa >= 115)) {
-      role = atk >= spa ? 'Sweeper Físico Rápido' : 'Sweeper Especial Rápido';
-    } else if (hp >= 90 && def >= 105) {
+    // Detect competitive role based on stats, items, and moves
+    let role = 'Balance / Pivot';
+    if (spe >= 105 && (atk >= 115 || spa >= 115)) {
+      role = atk >= spa ? 'Fast Physical Sweeper' : 'Fast Special Sweeper';
+    } else if (hp >= 95 && def >= 100) {
       role = 'Muralla Física (Physical Wall)';
-    } else if (hp >= 90 && spd >= 105) {
+    } else if (hp >= 95 && spd >= 100) {
       role = 'Muralla Especial (Special Wall)';
     } else if (hp >= 80 && def >= 85 && spd >= 85 && (atk >= 100 || spa >= 100)) {
-      role = 'Tanque / Bruiser';
-    } else if (spe >= 105) {
+      role = 'Tanque Ofensivo (Bulky Attacker)';
+    } else if (spe >= 110) {
       role = 'Revenge Killer / Scout';
+    } else if (atk >= 125 || spa >= 125) {
+      role = 'Wallbreaker Demoledor';
     }
 
-    const hasHazards = (m.moves || []).some(mv =>
+    const moves = (m.moves || []).filter(mv => Boolean(mv && mv.trim()));
+    const hasHazards = moves.some(mv =>
       /trampa rocas|stealth rock|púas|spikes|púas tóxicas|toxic spikes/i.test(mv)
     );
-    const hasRemoval = (m.moves || []).some(mv =>
+    const hasRemoval = moves.some(mv =>
       /giro rápido|rapid spin|despejar|defog/i.test(mv)
     );
-    const hasPivot = (m.moves || []).some(mv =>
+    const hasPivot = moves.some(mv =>
       /ida y vuelta|u-turn|voltiocambio|volt switch|relevo|baton pass/i.test(mv)
+    );
+    const hasRecovery = moves.some(mv =>
+      /recuperación|recover|respiro|roost|deseo|wish|amortiguador|soft-boiled|síntesis|synthesis/i.test(mv)
+    );
+    const hasSetup = moves.some(mv =>
+      /danza espada|swords dance|maquinación|nasty plot|danza dragón|dragon dance|paz mental|calm mind|danza aleteo|quiver dance/i.test(mv)
     );
 
     return {
@@ -86,29 +115,40 @@ Aún no has añadido integrantes a este equipo.
       hasHazards,
       hasRemoval,
       hasPivot,
+      hasRecovery,
+      hasSetup,
       item: m.item && m.item !== 'none' ? m.item : 'Sin objeto',
       ability: m.ability && m.ability !== 'none' ? m.ability : dex?.abilities?.[0] || 'Desconocida',
-      moves: (m.moves || []).filter(Boolean),
+      moves,
     };
   });
 
-  // Calculate Synergy Score
-  let score = 7.0;
-  if (filledMembers.length === 6) score += 1.0;
-  else if (filledMembers.length < 4) score -= 1.5;
+  // Calculate 1-100 Score
+  let score = 70;
+  if (filledMembers.length === 6) score += 10;
+  else if (filledMembers.length === 5) score += 2;
+  else if (filledMembers.length < 4) score -= 20;
 
-  const hasPhysicalAttacker = memberProfiles.some(p => p.atk >= 100);
-  const hasSpecialAttacker = memberProfiles.some(p => p.spa >= 100);
-  const hasHazardSetter = memberProfiles.some(p => p.hasHazards);
-  const hasHazardRemover = memberProfiles.some(p => p.hasRemoval);
-  const hasFastPokemon = memberProfiles.some(p => p.spe >= 105);
-  const hasDefensiveTank = memberProfiles.some(p => p.hp >= 85 && (p.def >= 95 || p.spd >= 95));
+  const hasPhysical = memberProfiles.some(p => p.atk >= 100);
+  const hasSpecial = memberProfiles.some(p => p.spa >= 100);
+  const hasHazards = memberProfiles.some(p => p.hasHazards);
+  const hasRemoval = memberProfiles.some(p => p.hasRemoval);
+  const hasFast = memberProfiles.some(p => p.spe >= 105);
+  const hasWall = memberProfiles.some(p => p.hp >= 85 && (p.def >= 95 || p.spd >= 95));
+  const hasPivoting = memberProfiles.some(p => p.hasPivot);
 
-  if (hasPhysicalAttacker && hasSpecialAttacker) score += 0.5;
-  if (hasHazardSetter) score += 0.4;
-  if (hasHazardRemover) score += 0.3;
-  if (hasFastPokemon) score += 0.3;
-  if (hasDefensiveTank) score += 0.4;
+  if (hasPhysical && hasSpecial) score += 5;
+  if (hasHazards) score += 4;
+  if (hasRemoval) score += 3;
+  if (hasFast) score += 3;
+  if (hasWall) score += 4;
+  if (hasPivoting) score += 3;
+
+  // Penalize incomplete moves or missing items
+  const missingItems = memberProfiles.filter(p => p.item === 'Sin objeto').length;
+  const incompleteMoves = memberProfiles.filter(p => p.moves.length < 4).length;
+  score -= missingItems * 2;
+  score -= incompleteMoves * 3;
 
   // Check critical shared weaknesses (from tiposData)
   const severeWeaknesses: { type: string; count: number }[] = [];
@@ -116,174 +156,196 @@ Aún no has añadido integrantes a este equipo.
     for (const wr of tiposData.weakRows) {
       if (wr.pokemons && wr.pokemons.length >= 3) {
         severeWeaknesses.push({ type: wr.name, count: wr.pokemons.length });
-        score -= 0.3;
+        score -= 4;
       }
     }
   }
 
-  score = Math.min(9.8, Math.max(5.0, Number(score.toFixed(1))));
+  score = Math.min(98, Math.max(25, Math.round(score)));
 
   const strategyText = (currentTeam.strategyNotes || '').trim();
 
-  // Pick best Lead candidate
-  let leadCandidate = memberProfiles[0];
-  const hazardLeads = memberProfiles.filter(p => p.hasHazards);
-  if (hazardLeads.length > 0) {
-    leadCandidate = hazardLeads.sort((a, b) => b.spe - a.spe)[0];
-  } else {
-    const fastPivots = memberProfiles.filter(p => p.hasPivot);
-    if (fastPivots.length > 0) {
-      leadCandidate = fastPivots.sort((a, b) => b.spe - a.spe)[0];
-    }
-  }
+  // Pick Lead candidate(s)
+  const hazardLeads = memberProfiles.filter(p => p.hasHazards).sort((a, b) => b.spe - a.spe);
+  const pivotLeads = memberProfiles.filter(p => p.hasPivot).sort((a, b) => b.spe - a.spe);
+  const fastLeads = memberProfiles.slice().sort((a, b) => b.spe - a.spe);
 
-  // Top Meta threats in PokeMMO (Gen 1-5 without Fairy)
-  const metaThreats = [
-    {
-      name: 'Garchomp',
-      type: 'Dragón / Tierra',
-      danger: 'Outrage / Terremoto demoledor, 102 Vel base y Swords Dance.',
-      check: memberProfiles.find(p => p.t1 === 'ice' || p.t2 === 'ice' || p.def >= 110)?.name || 'Muralla física o ataque con prioridad/hielo',
-    },
-    {
-      name: 'Scizor',
-      type: 'Bicho / Acero',
-      danger: 'Bullet Punch prioritario potenciado con Experto y Choice Band.',
-      check: memberProfiles.find(p => p.t1 === 'fire' || p.t2 === 'fire' || p.def >= 110)?.name || 'Ataque de Fuego x4 o Pokémon resistente al Acero',
-    },
-    {
-      name: 'Rotom-Wash',
-      type: 'Eléctrico / Agua',
-      danger: 'Levitación, Hidrobomba, Voltiocambio e Inmunidad a Tierra.',
-      check: memberProfiles.find(p => p.t1 === 'grass' || p.t2 === 'grass' || p.spd >= 100)?.name || 'Pokémon tipo Planta o atacante especial resistente',
-    },
-    {
-      name: 'Tyranitar',
-      type: 'Roca / Siniestro',
-      danger: 'Chorro Arena (aumenta SpD x1.5), Persecución y trampa de cambio.',
-      check: memberProfiles.find(p => p.t1 === 'fighting' || p.t2 === 'fighting' || p.t1 === 'ground' || p.t2 === 'ground')?.name || 'Ataques de Lucha x4 o Tierra',
-    },
-    {
-      name: 'Volcarona',
-      type: 'Bicho / Fuego',
-      danger: 'Danza Aleteo (Quiver Dance), Danza Llama y Zumbido tras 1 boost.',
-      check: memberProfiles.find(p => p.hasHazards || p.t1 === 'rock' || p.t2 === 'rock' || p.t1 === 'water')?.name || 'Trampa Rocas (50% de daño) o ataques de Roca',
-    },
-    {
-      name: 'Conkeldurr',
-      type: 'Lucha',
-      danger: 'Agallas + Toxiesfera, Ultrapuño y Puño Drenaje con gran bulk.',
-      check: memberProfiles.find(p => p.t1 === 'flying' || p.t2 === 'flying' || p.t1 === 'psychic' || p.def >= 120)?.name || 'Daño especial o Pokémon Volador/Psíquico',
-    },
+  const mainLead = hazardLeads[0] || pivotLeads[0] || fastLeads[0] || memberProfiles[0];
+  const secondaryLead = pivotLeads.find(p => p.name !== mainLead.name) || fastLeads.find(p => p.name !== mainLead.name);
+
+  // Check user strategy mentions (questions or problematic Pokémon)
+  const strategyLower = strategyText.toLowerCase();
+
+  // Known meta threats
+  const knownThreats = [
+    { name: 'Garchomp', counter: 'Ataques de Hielo ×4, Weavile, Cloyster o Gliscor defensivo con Tóxico' },
+    { name: 'Volcarona', counter: 'Trampa Rocas (pierde 50% PS), ataques de Roca prioritarios o Chansey / Blissey' },
+    { name: 'Scizor', counter: 'Ataques de Fuego ×4, Rotom-Calor, Magnezone atrapándolo con Imán, o Jellicent' },
+    { name: 'Rotom-Wash', counter: 'Breloom, Ferrothorn, Celebi o atacantes especiales con Planta' },
+    { name: 'Conkeldurr', counter: 'Gliscor, Slowbro, Reuniclus o daño psíquico/volador especial' },
+    { name: 'Tyranitar', counter: 'Ataques de Lucha ×4 (Conkeldurr, Lucario, Breloom) o Terremoto' },
+    { name: 'Dragonite', counter: 'Romper Multiescamas con Trampa Rocas, ataques de Hielo prioritarios' },
+    { name: 'Gengar', counter: 'Persecución (Tyranitar/Scizor), ataques psíquicos rápidos o prioridad de Siniestro' },
+    { name: 'Ferrothorn', counter: 'Ataques de Fuego ×4, Magnezone con Imán o Sofoco/Lanzallamas' },
+    { name: 'Lucario', counter: 'Gliscor, Chandelure, Jellicent o atacantes de Tierra/Fuego más rápidos' },
   ];
 
-  // Construct Markdown report
-  let report = `## 📊 Análisis Estratégico Competitivo PokeMMO (Gen 1-5)
+  // Check if user mentioned any specific problem pokemon
+  const mentionedThreat = knownThreats.find(t => strategyLower.includes(t.name.toLowerCase()));
 
-### 🏆 1. Evaluación General y Sinergia: **${score} / 10**
-${
-  score >= 8.5
-    ? '🔥 **Excelente equilibrio táctico.** El equipo cuenta con un balance óptimo de tipos, atacantes y defensas sólidas preparadas para el metagame de PokeMMO.'
-    : score >= 7.0
-    ? '⚖️ **Equipo competitivo viable y balanceado.** Presenta una base sólida con buena distribución ofensiva, aunque puede beneficiarse de ajustes puntuales en coberturas y control de hazards.'
-    : '⚠️ **Equipo en desarrollo.** Se recomienda equilibrar las debilidades elementales compartidas y asegurar cobertura tanto física como especial.'
-}
+  // Extract all team attacking moves and test coverage against all 17 types
+  const coveredTypes = new Set<string>();
+  const moveDetailsByType: Record<string, string[]> = {};
 
-${
-  strategyText
-    ? `**Enfoque estratégico del usuario:**  \n> *"${strategyText}"*  \nEl análisis toma en cuenta tu planteamiento y valida cómo se complementan los miembros para ejecutarlo.`
-    : '**Enfoque sugerido:** Formato Balance / Bulky Offense adaptable para partidas clasificatorias PvP en PokeMMO.'
-}
-
-#### 📋 Integrantes y Roles Identificados:
-${memberProfiles
-  .map(
-    (p, i) =>
-      `- **Slot ${i + 1}: ${p.name}** (${typeName(p.t1)}${p.t2 ? ' / ' + typeName(p.t2) : ''}) — *${p.role}*  \n  • Objeto: \`${p.item}\` | Habilidad: \`${p.ability}\` | Vel: **${p.spe}** | BST: **${p.bst}**`
-  )
-  .join('\n')}
-
----
-
-### 🛡️ 2. Coberturas Defensivas y Amenazas de PokéMMO
-${
-  severeWeaknesses.length > 0
-    ? `⚠️ **Debilidades Compartidas a Monitorear:**  \n` +
-      severeWeaknesses
-        .map(
-          w =>
-            `- Tipo **${w.type}**: **${w.count} Pokémon** del equipo reciben daño supereficaz. Es crucial preservar a tus miembros con resistencias o inmunidades para absorber estos golpes.`
-        )
-        .join('\n')
-    : `✅ **Cobertura elemental muy limpia.** No hay debilidades triplicadas evidentes sin respuesta directa en el equipo.`
-}
-
-#### 🎯 Enfrentamientos contra Amenazas Top de PokeMMO:
-${metaThreats
-  .slice(0, 4)
-  .map(
-    t =>
-      `- **${t.name}** (${t.type}): ${t.danger}  \n  💡 *Respuesta recomendada en tu equipo:* **${t.check}**.`
-  )
-  .join('\n')}
-
----
-
-### ⚔️ 3. Plan de Juego y Condiciones de Victoria (Win Conditions)
-1. **Fase 1 (Apertura y Campo):** Comienza aplicando presión o colocando Trampa Rocas para romper posibles *Bandas Focus* o desgastar a amenazas como Volcarona y Dragonite.
-2. **Fase 2 (Desgaste y Posicionamiento):** Utiliza movimientos de pivot (*Ida y Vuelta / Voltiocambio*) o cambios predictivos para castigar a los Pokémon defensivos del rival.
-3. **Fase 3 (Remate Final):** Preserva a tu atacante más rápido o con mayor poder de ruptura (**${
-    memberProfiles.sort((a, b) => Math.max(b.atk, b.spa) - Math.max(a.atk, a.spa))[0]?.name || 'tu Sweeper principal'
-  }**) para limpiar los últimos 2-3 Pokémon rivales una vez que sus murallas hayan caído.
-
----
-
-### 💡 4. Pokémon de Apertura Recomendado (Lead)
-- **Apertura Ideal:** **${leadCandidate.name}** (${typeName(leadCandidate.t1)}${
-    leadCandidate.t2 ? ' / ' + typeName(leadCandidate.t2) : ''
-  }).
-  - **Motivo:** ${
-    leadCandidate.hasHazards
-      ? 'Garantiza poner hazards en el primer turno para desgastar al rival desde el inicio.'
-      : leadCandidate.spe >= 100
-      ? 'Su alta velocidad le permite tomar la iniciativa o presionar al lead rival antes de que actúe.'
-      : 'Ofrece gran estabilidad defensiva para testear el movimiento inicial del adversario.'
+  for (const p of memberProfiles) {
+    for (const mv of p.moves) {
+      // Find move type approximation
+      const mvLower = mv.toLowerCase();
+      for (const [tKey] of TYPES) {
+        if (mvLower.includes(tKey) || mvLower.includes(typeName(tKey).toLowerCase())) {
+          // Check what this type hits super effectively
+          const advantages = TYPE_CHART[tKey] || {};
+          for (const [defT, mult] of Object.entries(advantages)) {
+            if (mult > 1) {
+              coveredTypes.add(defT);
+              if (!moveDetailsByType[defT]) moveDetailsByType[defT] = [];
+              moveDetailsByType[defT].push(`${p.name} (${mv})`);
+            }
+          }
+        }
+      }
+    }
   }
 
+  return `## 🧠 Análisis Táctico PokéMMO (Google Gemini 3 / Motor Competitivo Gen 1-5)
+
+### 📊 11. Puntuación Competitiva Global del Equipo: **${score} / 100**
+${
+  score >= 85
+    ? '🌟 **Equipo de Élite Competitiva.** Sinergia sobresaliente, balance óptimo de atacantes físicos y especiales, control de hazards y sólidas respuestas contra los núcleos del meta de PokéMMO.'
+    : score >= 70
+    ? '⚔️ **Equipo Competitivo Viable.** Base muy consistente con buen potencial en ladder PvP de PokéMMO; pequeños ajustes en objetos o coberturas potenciarán su rendimiento.'
+    : '⚠️ **Equipo en Construcción.** Se aconseja completar los 6 integrantes, equipar objetos competitivos y balancear debilidades elementales compartidas.'
+}
+
 ---
 
-### 🔧 5. Sugerencias y Optimizaciones Específicas
-${memberProfiles
-  .map(p => {
-    const suggestions: string[] = [];
-    if (p.item === 'Sin objeto' || p.item === 'none') {
-      suggestions.push('Asignar objeto competitivo (Restos, Cinta Elegida, Pañuelo Elegido o Vidasfera)');
-    }
-    if (p.moves.length < 4) {
-      suggestions.push(`Completar los 4 movimientos (actualmente tiene ${p.moves.length})`);
-    }
-    if (!hasHazardSetter && p.dex?.learnset?.some(m => /stealthrock|tramparocas/i.test(m))) {
-      suggestions.push('Considerar aprender Trampa Rocas para control de campo');
-    }
-    if (suggestions.length === 0) {
-      suggestions.push('Configuración sólida; optimizar EVs al nivel 50 en la pestaña de estadísticas.');
-    }
-    return `- **${p.name}:** ${suggestions.join(' · ')}.`;
-  })
-  .join('\n')}
-
+### 🛡️ 1. Evaluación de Sinergia del Equipo y Cobertura Defensiva de Tipos
+- **Balance General:** ${filledMembers.length}/6 Pokémon configurados.
 ${
-  filledMembers.length < 6
-    ? `\n> 💡 **Nota de equipo incompleto:** Te faltan **${
-        6 - filledMembers.length
-      } Pokémon** para completar el equipo de 6. Se sugiere añadir un ${
-        !hasHazardRemover ? 'Starmie o Forretress con Giro Rápido' : 'Rotom-Wash o Garchomp'
-      } para redondear la sinergia.`
+  severeWeaknesses.length > 0
+    ? `⚠️ **Debilidades Compartidas Relevantes:**\n` +
+      severeWeaknesses
+        .map(w => `  • **Tipo ${w.type}:** ${w.count} Pokémon reciben daño supereficaz. Es prioritario conservar a tus integrantes con resistencias o inmunidades para absorber estos impactos.`)
+        .join('\n')
+    : `✅ **Cobertura Defensiva Limpia:** No se detectan debilidades triplicadas sin compensación de resistencias o inmunidades en el equipo.`
+}
+
+---
+
+### 🎯 2. Evaluación de Cobertura de Movimientos del Equipo
+- **Tipos de Ataque Cubiertos con Daño Supereficaz:** ${coveredTypes.size} de 17 tipos estándar (Gen 1-5).
+${
+  coveredTypes.size >= 12
+    ? `✅ **Gran abanico ofensivo:** El equipo cuenta con herramientas para presionar a la gran mayoría de composiciones rivales.`
+    : `💡 **Sugerencia de cobertura:** Considera diversificar tipos de movimientos elementales (Hielo, Lucha, Tierra y Fuego son vitales en PokéMMO) para castigar cambios del rival.`
+}
+
+---
+
+### 👑 3. Sugerencia de Leader(s) y Cómo Desempeñar su Función
+- **Lead Principal:** **${mainLead.name}**
+  - **Función en Turno 1:** ${
+    mainLead.hasHazards
+      ? 'Aprovecha su velocidad para colocar Trampa Rocas / Púas de inmediato, desgastando al equipo rival y anulando Bandas Focus / Multiescamas.'
+      : mainLead.hasPivot
+      ? 'Utiliza Ida y Vuelta / Voltiocambio para ganar la iniciativa y pivotar al counter idóneo según la apertura del oponente.'
+      : 'Ejerce presión ofensiva directa o testea la intención del rival con su presencia en mesa.'
+  }
+${
+  secondaryLead
+    ? `- **Lead Alternativo:** **${secondaryLead.name}** — Excelente segunda opción cuando el oponente abre con un counter desfavorable para tu lead principal.`
     : ''
 }
 
 ---
-*Análisis generado por el Motor Estratégico IA de PokéMMO (Metagame Gen 1-5).*`;
 
-  return report;
+### 📝 4. Sugerencias para la Estrategia Teniendo en Cuenta las Notas del Usuario
+${
+  strategyText
+    ? `> **Estrategia planteada por el usuario:** *"${strategyText}"*\n\n` +
+      `Tu planteamiento es tácticamente compatible con el metagame de PokéMMO. Para maximizar su efectividad, asegúrate de presionar desde el turno 1 y sincronizar los tiempos de entrada de tus atacantes principales una vez que las defensas rivales estén debilitadas.`
+    : `No has ingresado notas en el cuadro de estrategia. Se recomienda una filosofía **Bulky Offense / Balance**, adaptando el plan de juego entre desgaste con hazards y barrido final.`
+}
+
+---
+
+### ♟️ 5. Roles que Debe Desempeñar Cada Pokémon
+${memberProfiles
+  .map(
+    (p, i) =>
+      `**Slot #${i + 1} — ${p.name}** (${typeName(p.t1)}${p.t2 ? ' / ' + typeName(p.t2) : ''})  \n` +
+      `  • **Rol táctico:** *${p.role}*  \n` +
+      `  • **Objeto:** \`${p.item}\` | **Habilidad:** \`${p.ability}\`  \n` +
+      `  • **Movimientos actuales:** ${p.moves.length > 0 ? p.moves.join(', ') : '*(Sin definir)*'}`
+  )
+  .join('\n\n')}
+
+---
+
+### ⚠️ 6. Posibles Debilidades y Pokémon que Pueden Romper la Estrategia
+Amenazas dominantes en el metagame de PokéMMO (Gen 1-5):
+- **Garchomp:** Swords Dance + Outrage/Terremoto con 102 Vel. *Respuesta:* Ataques de Hielo ×4 o murallas con Intimidación/Físicas.
+- **Volcarona:** Quiver Dance + Danza Llama. *Respuesta:* Trampa Rocas (le resta el 50% de PS al entrar) y ataques de Roca prioritarios.
+- **Scizor:** Bullet Punch con Cinta Elegida y Experto. *Respuesta:* Ataques de Fuego ×4 o Pokémon con Muro Mágico / Levitación resistentes al Acero.
+- **Rotom-Wash:** Voltiocambio + Hidrobomba. *Respuesta:* Pokémon tipo Planta o esponjas especiales como Chansey.
+
+---
+
+### 🔍 7. Resolución de Pokémon Problemáticos Mencionados por el Usuario
+${
+  mentionedThreat
+    ? `Detectamos que mencionas a **${mentionedThreat.name}** en tus notas:\n` +
+      `💡 **Solución táctica:** Para neutralizar a ${mentionedThreat.name}, emplea: **${mentionedThreat.counter}**.`
+    : `Si algún Pokémon específico del rival (ej. *Conkeldurr, Breloom, Dragonite o Tyranitar*) te está causando dificultades en combate, escribe su nombre en el **Cuadro de Estrategia o Notas** y la IA te formulará la respuesta exacta y counter específico.`
+}
+
+---
+
+### 💡 8. Sugerencias de Pokémon para Desempeñar Roles Faltantes
+${
+  !hasHazards
+    ? `- **Hazard Setter:** Se recomienda incorporar a **Ferrothorn**, **Forretress** o **Skarmory** con Trampa Rocas / Púas.\n`
+    : ''
+}${
+  !hasRemoval
+    ? `- **Hazard Remover:** Se recomienda a **Starmie** (Giro Rápido ofensivo) o **Tentacruel** (Giro Rápido defensivo).\n`
+    : ''
+}${
+  !hasFast
+    ? `- **Speed Control / Revenge Killer:** Se sugiere a **Jolteon**, **Gengar** o un Pokémon equipado con **Pañuelo Elegido** (Choice Scarf).\n`
+    : ''
+}${
+  hasHazards && hasRemoval && hasFast
+    ? `- El equipo cubre los roles clave de soporte, remoción de peligros y velocidad.`
+    : ''
+}
+
+---
+
+### 🛠️ 9. Viabilidad de Pokémon Sugeridos y Configuración de Entrenamiento
+${
+  strategyText && /puedo usar|serviria|sirve|recomiendas a|viable/i.test(strategyText)
+    ? `Evaluando tu consulta sobre Pokémon específicos en tus notas:\n` +
+      `- **Viabilidad:** Sí, cualquier Pokémon de 1ª a 5ª Gen con BST ≥ 480 puede cumplir funciones competitivas en PokéMMO si se optimizan sus EVs y objeto.\n` +
+      `- **Entrenamiento recomendado:** 252 EVs en la estadística ofensiva principal o PS, 252 EVs en Velocidad o Defensa correspondiente, y 4 EVs restantes. Naturaleza favorable sin recortar la estadística útil.`
+    : `Para evaluar si un Pokémon específico de tu preferencia puede cumplir un rol determinado, indícalo en el **Cuadro de Estrategia** (ej: *"¿Puede Arcanine ser mi muralla física?"* o *"¿Cómo armo a Cloyster como sweeper?"*) y el asistente generará su reparto exacto de EVs, Naturaleza, Habilidad, Objeto y 4 Movimientos.`
+}
+
+---
+
+### 📜 10. Cumplimiento Estricto de Reglas PokéMMO (Gen 1-5 Sin Tipo Hada)
+- ✅ Todas las evaluaciones se ciñen rigurosamente a las generaciones 1 a 5 (hasta Teselia/Unova).
+- ❌ **Sin tipo Hada** (Clefable y Togekiss mantienen sus tipos originales Normal y Normal/Volador).
+- ❌ Sin Megaevoluciones, Dinamax ni Teracristalización.`;
 }

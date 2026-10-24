@@ -17,7 +17,7 @@ run = "pnpm --filter @workspace/pokemmo-damage-calc run dev"
 [services.production]
 build = [ "pnpm", "--filter", "@workspace/pokemmo-damage-calc", "run", "build" ]
 serve = "static"
-publicDir = "artifacts/pokemmo-damage-calc/dist/public"
+publicDir = "artifacts/pokemmo-damage-calc/dist"
 
 [[services.production.rewrites]]
 from = "/*"

@@ -86,7 +86,7 @@ export function getPokemonDexNum(target?: unknown, fallbackNum?: number): number
 export function getPokemonSpriteUrl(target?: unknown, fallbackNum?: number): string {
   const num = getPokemonDexNum(target, fallbackNum);
   if (num > 0 && num <= 649) {
-    return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${num}.png`;
+    return `/assets/sprites/${num}.webp`;
   }
   return '';
 }

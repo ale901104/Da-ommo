@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { getPokemonShowdownSpriteStyle } from './PokemonSearchableSelect';
+import React, { useEffect, useMemo, useState } from 'react';
+import { getPokemonShowdownSpriteStyle, getPokemonIconIndex } from './PokemonSearchableSelect';
 import { TYPE_COLORS } from '../pokemon-constants';
 
 interface PokemonAnimatedSpriteProps {
@@ -11,6 +11,38 @@ interface PokemonAnimatedSpriteProps {
   className?: string;
 }
 
+// Global in-memory cache to remember loaded and failed local asset URLs.
+// This prevents layout thrashing, repeated failed network events, and memory leaks.
+const localSpriteCache = new Map<string, boolean>();
+const preloadedImages = new Map<string, HTMLImageElement>();
+const MAX_PRELOAD_CACHE = 150;
+
+/**
+ * Preloads and checks if a local image exists and decodes properly.
+ */
+function testLocalImage(url: string): Promise<boolean> {
+  if (localSpriteCache.has(url)) {
+    return Promise.resolve(localSpriteCache.get(url)!);
+  }
+
+  return new Promise(resolve => {
+    const img = new Image();
+    img.src = url;
+    img.decoding = 'async';
+    img.onload = () => {
+      localSpriteCache.set(url, true);
+      if (preloadedImages.size < MAX_PRELOAD_CACHE) {
+        preloadedImages.set(url, img);
+      }
+      resolve(true);
+    };
+    img.onerror = () => {
+      localSpriteCache.set(url, false);
+      resolve(false);
+    };
+  });
+}
+
 export const PokemonAnimatedSprite: React.FC<PokemonAnimatedSpriteProps> = ({
   num,
   name,
@@ -19,14 +51,73 @@ export const PokemonAnimatedSprite: React.FC<PokemonAnimatedSpriteProps> = ({
   size = 'lg',
   className = '',
 }) => {
-  // Step 0: Animated Showdown GIF from PokeAPI
-  // Step 1: Animated Gen 5 Black/White GIF from PokeAPI
-  // Step 2: Static PNG from PokeAPI
-  // Step 3: Offline local Showdown spritesheet fallback
-  const [errorStep, setErrorStep] = useState<number>(0);
-
   const cleanNum = Number(num);
   const isValidNum = !isNaN(cleanNum) && cleanNum > 0 && cleanNum <= 649;
+  const cleanId = (pokemonId || name || '').toLowerCase().replace(/^pk-/, '').replace(/[^a-z0-9_-]/g, '');
+
+  // Generate candidate local paths (100% offline, internal app resources)
+  const candidateUrls = useMemo(() => {
+    const urls: string[] = [];
+    if (cleanId) {
+      urls.push(`/assets/sprites/${cleanId}.webp`);
+      urls.push(`/assets/sprites/${cleanId}.gif`);
+    }
+    if (isValidNum) {
+      urls.push(`/assets/sprites/${cleanNum}.webp`);
+      urls.push(`/assets/sprites/${cleanNum}.gif`);
+      urls.push(`/assets/sprites/${cleanNum}.png`);
+    }
+    return urls;
+  }, [cleanId, cleanNum, isValidNum]);
+
+  // Active verified local URL
+  const [activeSrc, setActiveSrc] = useState<string | null>(() => {
+    for (const url of candidateUrls) {
+      if (localSpriteCache.get(url) === true) return url;
+    }
+    return null;
+  });
+
+  const [hasTested, setHasTested] = useState<boolean>(() => {
+    return candidateUrls.length > 0 && candidateUrls.every(u => localSpriteCache.has(u));
+  });
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    // Check if one of the candidate URLs is already known to be loaded
+    for (const url of candidateUrls) {
+      if (localSpriteCache.get(url) === true) {
+        setActiveSrc(url);
+        setHasTested(true);
+        return;
+      }
+    }
+
+    // Otherwise, asynchronously test local resource files sequentially
+    const evaluateLocalSprites = async () => {
+      for (const url of candidateUrls) {
+        if (localSpriteCache.get(url) === false) continue;
+        const exists = await testLocalImage(url);
+        if (isCancelled) return;
+        if (exists) {
+          setActiveSrc(url);
+          setHasTested(true);
+          return;
+        }
+      }
+      if (!isCancelled) {
+        setActiveSrc(null);
+        setHasTested(true);
+      }
+    };
+
+    evaluateLocalSprites();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [candidateUrls]);
 
   const typeConfig = TYPE_COLORS[type.toLowerCase()] || {
     bg: '#334155',
@@ -49,20 +140,9 @@ export const PokemonAnimatedSprite: React.FC<PokemonAnimatedSpriteProps> = ({
     xl: 'max-w-[90px] max-h-[90px] sm:max-w-[105px] sm:max-h-[105px]',
   }[size];
 
-  let src = '';
-  if (isValidNum) {
-    if (errorStep === 0) {
-      src = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/${cleanNum}.gif`;
-    } else if (errorStep === 1) {
-      src = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-v/black-white/animated/${cleanNum}.gif`;
-    } else if (errorStep === 2) {
-      src = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${cleanNum}.png`;
-    }
-  }
-
-  const handleImgError = () => {
-    setErrorStep(prev => prev + 1);
-  };
+  // Has valid local Showdown spritesheet index
+  const iconIndex = getPokemonIconIndex(pokemonId || name || cleanNum, cleanNum);
+  const hasLocalSheetSprite = iconIndex > 0 && iconIndex <= 1640;
 
   return (
     <div
@@ -72,28 +152,39 @@ export const PokemonAnimatedSprite: React.FC<PokemonAnimatedSpriteProps> = ({
         border: `1.5px solid ${typeConfig.bg}45`,
         boxShadow: `0 4px 12px rgba(0, 0, 0, 0.35), inset 0 0 16px ${typeConfig.bg}15`,
       }}
-      title={`#${cleanNum} ${name}`}
+      title={`#${cleanNum || '---'} ${name}`}
     >
-      {isValidNum && errorStep <= 2 && src ? (
+      {activeSrc ? (
+        /* Local Animated WebP or GIF from internal assets/sprites/ */
         <img
-          src={src}
+          src={activeSrc}
           alt={name}
           loading="lazy"
           decoding="async"
-          onError={handleImgError}
           className={`object-contain transition-transform duration-200 select-none ${imageSizeClasses}`}
           style={{
             imageRendering: 'pixelated',
             filter: 'drop-shadow(0 3px 5px rgba(0, 0, 0, 0.55))',
           }}
+          onError={() => {
+            localSpriteCache.set(activeSrc, false);
+            setActiveSrc(null);
+          }}
         />
-      ) : (
-        /* Fallback: Local offline spritesheet icon */
+      ) : hasLocalSheetSprite ? (
+        /* Fallback 1: Bundled local offline Showdown spritesheet icon */
         <span
-          style={getPokemonShowdownSpriteStyle(pokemonId || name || cleanNum)}
-          className="image-pixelated inline-block"
+          style={getPokemonShowdownSpriteStyle(pokemonId || name || cleanNum, cleanNum)}
+          className="image-pixelated inline-block select-none"
           role="img"
           aria-label={name}
+        />
+      ) : (
+        /* Fallback 2: Default offline local silhouette SVG placeholder */
+        <img
+          src="/assets/sprites/placeholder.svg"
+          alt={name}
+          className={`object-contain opacity-60 select-none ${imageSizeClasses}`}
         />
       )}
     </div>

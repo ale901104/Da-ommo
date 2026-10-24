@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'path';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
@@ -85,6 +86,39 @@ export default defineConfig({
         enabled: false,
       },
     }),
+    {
+      name: 'copy-build-artifacts-dual',
+      closeBundle() {
+        try {
+          const out = path.resolve(import.meta.dirname, 'dist');
+          const pub = path.resolve(out, 'public');
+          const rootDist = path.resolve(import.meta.dirname, '../../dist');
+
+          if (fs.existsSync(out)) {
+            // Populate dist/public
+            fs.mkdirSync(pub, { recursive: true });
+            const entries = fs.readdirSync(out);
+            for (const entry of entries) {
+              if (entry === 'public') continue;
+              const srcPath = path.join(out, entry);
+              const destPath = path.join(pub, entry);
+              fs.cpSync(srcPath, destPath, { recursive: true });
+            }
+
+            // Populate root dist
+            fs.mkdirSync(rootDist, { recursive: true });
+            for (const entry of entries) {
+              if (entry === 'public') continue;
+              const srcPath = path.join(out, entry);
+              const destPath = path.join(rootDist, entry);
+              fs.cpSync(srcPath, destPath, { recursive: true });
+            }
+          }
+        } catch (e) {
+          console.warn('Warning syncing build artifacts:', e);
+        }
+      },
+    },
   ],
   resolve: {
     alias: {
