@@ -14,10 +14,14 @@ import firebaseConfig from '../firebase-applet-config.json';
 const app: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 export const auth: Auth = getAuth(app);
 
-// Configure Google Auth Provider with Google Drive Scopes
-const driveProvider = new GoogleAuthProvider();
-driveProvider.addScope('https://www.googleapis.com/auth/drive.file');
-driveProvider.addScope('https://www.googleapis.com/auth/drive');
+// Configure Google Auth Provider with Google Drive & Gmail Scopes
+export const googleProvider = new GoogleAuthProvider();
+googleProvider.addScope('https://www.googleapis.com/auth/drive.file');
+googleProvider.addScope('https://www.googleapis.com/auth/drive');
+googleProvider.addScope('https://mail.google.com/');
+googleProvider.addScope('https://www.googleapis.com/auth/gmail.readonly');
+googleProvider.addScope('https://www.googleapis.com/auth/gmail.send');
+googleProvider.addScope('https://www.googleapis.com/auth/gmail.modify');
 
 // In-memory access token cache (CRITICAL: never stored in localStorage or sessionStorage)
 let cachedAccessToken: string | null = null;
@@ -29,6 +33,7 @@ export interface DriveTeamFile {
   modifiedTime: string;
   size?: string;
   description?: string;
+  mimeType?: string;
 }
 
 /**
@@ -56,10 +61,10 @@ export const initDriveAuth = (
 export const signInWithGoogle = async (): Promise<{ user: User; accessToken: string } | null> => {
   try {
     isSigningIn = true;
-    const result = await signInWithPopup(auth, driveProvider);
+    const result = await signInWithPopup(auth, googleProvider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (!credential?.accessToken) {
-      throw new Error('No se pudo obtener el token de acceso de Google Drive.');
+      throw new Error('No se pudo obtener el token de acceso de Google.');
     }
 
     cachedAccessToken = credential.accessToken;
@@ -88,12 +93,20 @@ export const signOutGoogle = async (): Promise<void> => {
 };
 
 /**
- * Lists all .poketeam.json or team backup files in Google Drive.
+ * Gets current Firebase user.
+ */
+export const getCurrentGoogleUser = (): User | null => {
+  return auth.currentUser;
+};
+
+/**
+ * Lists all .poketeam.json, .json, or team backup files in Google Drive.
  */
 export const listDriveTeamFiles = async (accessToken: string): Promise<DriveTeamFile[]> => {
-  const query = encodeURIComponent("name contains '.poketeam.json' and trashed = false");
-  const fields = encodeURIComponent('files(id, name, modifiedTime, size, description)');
-  const url = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=${fields}&orderBy=modifiedTime%20desc&pageSize=30`;
+  const qStr = "trashed = false and (name contains 'poketeam' or name contains '.json' or name contains '.txt' or mimeType = 'application/json' or mimeType = 'text/plain')";
+  const query = encodeURIComponent(qStr);
+  const fields = encodeURIComponent('files(id, name, modifiedTime, size, description, mimeType)');
+  const url = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=${fields}&orderBy=modifiedTime%20desc&pageSize=50&spaces=drive`;
 
   const response = await fetch(url, {
     method: 'GET',
@@ -117,10 +130,13 @@ export const listDriveTeamFiles = async (accessToken: string): Promise<DriveTeam
 };
 
 /**
- * Downloads a team JSON file from Google Drive by fileId.
+ * Downloads a team JSON or text file from Google Drive by fileId.
  */
-export const downloadDriveTeamFile = async (accessToken: string, fileId: string): Promise<any> => {
-  const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`;
+export const downloadDriveTeamFile = async (accessToken: string, fileId: string, mimeType?: string): Promise<any> => {
+  let url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`;
+  if (mimeType && mimeType.startsWith('application/vnd.google-apps')) {
+    url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}/export?mimeType=text/plain`;
+  }
 
   const response = await fetch(url, {
     method: 'GET',
@@ -138,7 +154,11 @@ export const downloadDriveTeamFile = async (accessToken: string, fileId: string)
   }
 
   const content = await response.text();
-  return JSON.parse(content);
+  try {
+    return JSON.parse(content);
+  } catch {
+    return content;
+  }
 };
 
 /**
@@ -148,17 +168,17 @@ export const saveTeamToDrive = async (
   accessToken: string,
   team: { id: string; name: string; [key: string]: any }
 ): Promise<{ id: string; name: string }> => {
-  const safeName = team.name.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+  const safeName = team.name.trim().replace(/[/\\?%*:|"<>]/g, '_');
   const fileName = `${safeName || 'equipo'}.poketeam.json`;
 
   const metadata = {
     name: fileName,
     mimeType: 'application/json',
-    description: `Equipo PokéMMO: ${team.name} (Generaciones 1-5)`,
+    description: `Equipo: ${team.name} (Generaciones 1-5)`,
   };
 
   const fileContent = JSON.stringify(team, null, 2);
-  const boundary = '-------PokeMMOTeamBuilderBoundary' + Math.random().toString(36).substring(2);
+  const boundary = '-------TeamBuilderBoundary' + Math.random().toString(36).substring(2);
   const delimiter = `\r\n--${boundary}\r\n`;
   const closeDelimiter = `\r\n--${boundary}--`;
 
@@ -167,7 +187,7 @@ export const saveTeamToDrive = async (
     'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
     JSON.stringify(metadata) +
     delimiter +
-    'Content-Type: application/json\r\n\r\n' +
+    'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
     fileContent +
     closeDelimiter;
 

@@ -76,9 +76,32 @@ export const dexPokemonMap = new Map<string, Pokemon>(
   allGen1To5Pokemon.map(p => [p.id, p])
 );
 
-export const allGen1To5Moves: Move[] = (rawMovesData as Move[]);
+import { HIDDEN_POWER_TYPES } from './pokemon-constants';
+
+const rawMoves = rawMovesData as Move[];
+
+export const hiddenPowerMoveVariants: Move[] = HIDDEN_POWER_TYPES.map(hp => ({
+  num: 237,
+  id: hp.id,
+  showdownKey: 'hiddenpower',
+  nombre: hp.moveName,
+  tipo: hp.tipo,
+  categoria: 'special',
+  poder: 60,
+  pp: 15,
+  accuracy: 100,
+  priority: 0,
+  probEfecto: null,
+  target: 'selected-pokemon',
+  targetLabel: 'Un Pokémon adyacente o seleccionado',
+  descripcion: `Poder Oculto de tipo ${hp.label} (Gen 5, 60 Potencia).`,
+  learnersCount: 661,
+}));
+
+export const allGen1To5Moves: Move[] = [...rawMoves, ...hiddenPowerMoveVariants];
 
 export const dexMoveMap = new Map<string, Move>(
   allGen1To5Moves.map(m => [m.id, m])
 );
+
 

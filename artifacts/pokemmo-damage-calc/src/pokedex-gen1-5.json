@@ -30962,7 +30962,9 @@
       "water-pulse",
       "will-o-wisp",
       "wonder-room",
-      "zen-headbutt"
+      "zen-headbutt",
+      "light-screen",
+      "reflect"
     ],
     "weightkg": 11,
     "heightm": 0.5,
@@ -48872,7 +48874,8 @@
       "trick",
       "uproar",
       "volt-switch",
-      "will-o-wisp"
+      "will-o-wisp",
+      "overheat"
     ],
     "weightkg": 0.3,
     "heightm": 0.3,
@@ -48949,7 +48952,8 @@
       "trick",
       "uproar",
       "volt-switch",
-      "will-o-wisp"
+      "will-o-wisp",
+      "hydro-pump"
     ],
     "weightkg": 0.3,
     "heightm": 0.3,
@@ -49026,7 +49030,8 @@
       "trick",
       "uproar",
       "volt-switch",
-      "will-o-wisp"
+      "will-o-wisp",
+      "blizzard"
     ],
     "weightkg": 0.3,
     "heightm": 0.3,
@@ -49103,7 +49108,8 @@
       "trick",
       "uproar",
       "volt-switch",
-      "will-o-wisp"
+      "will-o-wisp",
+      "air-slash"
     ],
     "weightkg": 0.3,
     "heightm": 0.3,
@@ -49180,7 +49186,8 @@
       "trick",
       "uproar",
       "volt-switch",
-      "will-o-wisp"
+      "will-o-wisp",
+      "leaf-storm"
     ],
     "weightkg": 0.3,
     "heightm": 0.3,

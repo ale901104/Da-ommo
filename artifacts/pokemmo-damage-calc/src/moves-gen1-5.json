@@ -5725,7 +5725,7 @@
     "target": "selected-pokemon",
     "targetLabel": "Un Pokémon adyacente o seleccionado",
     "descripcion": "Lanza una gran masa de agua a altísima presión para causar un daño devastador al objetivo.",
-    "learnersCount": 81,
+    "learnersCount": 83,
     "learners": [
       "squirtle",
       "wartortle",
@@ -5807,7 +5807,9 @@
       "jellicent",
       "alomomola",
       "keldeo",
-      "keldeoresolute"
+      "keldeoresolute",
+      "rotomwash",
+      "rotom-wash"
     ],
     "competitiveDesc": "If the current weather is Sun and the user is not holding Utility Umbrella, this move's damage is multiplied by 1.5 instead of halved for being Water type.",
     "shortDesc": "During Sun: 1.5× damage instead of half."
@@ -6246,7 +6248,7 @@
     "target": "all-opponents",
     "targetLabel": "Todos los Pokémon rivales adyacentes",
     "descripcion": "Tormenta de hielo que puede llegar a congelar.",
-    "learnersCount": 203,
+    "learnersCount": 204,
     "learners": [
       "squirtle",
       "wartortle",
@@ -6450,7 +6452,8 @@
       "kyurem",
       "kyuremblack",
       "kyuremwhite",
-      "genesect"
+      "genesect",
+      "rotomfrost"
     ],
     "competitiveDesc": "Has a 10% chance to freeze the target. If the weather is Snow, this move does not check accuracy.",
     "shortDesc": "10% chance to freeze foe(s). Can't miss in Snow."
@@ -13655,7 +13658,7 @@
     "target": "users-field",
     "targetLabel": "Todo el bando del usuario",
     "descripcion": "Pared de luz que reduce durante cinco turnos el daño producido por los ataques especiales.",
-    "learnersCount": 197,
+    "learnersCount": 198,
     "learners": [
       "bulbasaur",
       "ivysaur",
@@ -13853,7 +13856,8 @@
       "kyuremwhite",
       "meloetta",
       "meloettapirouette",
-      "genesect"
+      "genesect",
+      "sableye"
     ],
     "competitiveDesc": "For 5 turns, the user and its party members take 0.5× damage from special attacks, or 0.66× damage if in a Double Battle. Damage is not reduced further with Aurora Veil. Critical hits ignore this effect. It is removed from the user's side if the user or an ally is successfully hit by Brick Break, Psychic Fangs, or Defog. Lasts for 8 turns if the user is holding Light Clay. Fails if the effect is already active on the user's side.",
     "shortDesc": "For 5 turns, special damage to allies is halved."
@@ -13935,7 +13939,7 @@
     "target": "users-field",
     "targetLabel": "Todo el bando del usuario",
     "descripcion": "Pared de luz que reduce durante cinco turnos el daño producido por los ataques físicos.",
-    "learnersCount": 206,
+    "learnersCount": 207,
     "learners": [
       "bulbasaur",
       "ivysaur",
@@ -14142,7 +14146,8 @@
       "kyuremwhite",
       "keldeo",
       "keldeoresolute",
-      "genesect"
+      "genesect",
+      "sableye"
     ]
   },
   {
@@ -39264,7 +39269,7 @@
     "target": "selected-pokemon",
     "targetLabel": "Un Pokémon adyacente o seleccionado",
     "descripcion": "Ataque en toda regla que baja mucho el Ataque Especial de quien lo usa.",
-    "learnersCount": 63,
+    "learnersCount": 64,
     "learners": [
       "charmander",
       "charmeleon",
@@ -39328,7 +39333,8 @@
       "chandelure",
       "larvesta",
       "volcarona",
-      "reshiram"
+      "reshiram",
+      "rotomheat"
     ],
     "competitiveDesc": "Lowers the user's Special Attack by 2 stages.",
     "shortDesc": "Lowers the user's Sp. Atk by 2."
@@ -46621,7 +46627,7 @@
     "target": "selected-pokemon",
     "targetLabel": "Un Pokémon adyacente o seleccionado",
     "descripcion": "Ataca con un viento afilado que incluso corta el aire. También puede amedrentar al objetivo.",
-    "learnersCount": 46,
+    "learnersCount": 47,
     "learners": [
       "charizard",
       "pidgey",
@@ -46668,7 +46674,8 @@
       "vullaby",
       "mandibuzz",
       "tornadus",
-      "tornadustherian"
+      "tornadustherian",
+      "rotomfan"
     ],
     "competitiveDesc": "Has a 30% chance to make the target flinch.",
     "shortDesc": "30% chance to make the target flinch."
@@ -49526,7 +49533,7 @@
     "target": "selected-pokemon",
     "targetLabel": "Un Pokémon adyacente o seleccionado",
     "descripcion": "Envuelve al objetivo con una lluvia de hojas afiladas, pero reduce mucho su Ataque Especial.",
-    "learnersCount": 28,
+    "learnersCount": 29,
     "learners": [
       "bulbasaur",
       "victreebel",
@@ -49555,7 +49562,8 @@
       "serperior",
       "pansage",
       "leavanny",
-      "petilil"
+      "petilil",
+      "rotommow"
     ],
     "competitiveDesc": "Lowers the user's Special Attack by 2 stages.",
     "shortDesc": "Lowers the user's Sp. Atk by 2."

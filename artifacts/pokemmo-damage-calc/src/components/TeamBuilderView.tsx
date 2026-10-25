@@ -57,6 +57,7 @@ import {
   getPokemonShowdownSpriteStyle,
   PokemonSearchableSelect,
 } from './PokemonSearchableSelect';
+import { MoveSearchableSelect } from './MoveSearchableSelect';
 import {
   AI_PROVIDERS,
   STORAGE_SELECTED_PROVIDER,
@@ -106,6 +107,7 @@ interface TeamBuilderViewProps {
   allMoves?: Move[];
   onSendToCalculator: (pokemon: Pokemon, role: 'attacker' | 'defender', moveId?: string) => void;
   onToast: (msg: string) => void;
+  theme?: 'light' | 'dark';
 }
 
 type BuilderSubTab = 'equipo' | 'tipos' | 'estadisticas' | 'movimientos';
@@ -570,7 +572,9 @@ export const TeamBuilderView: React.FC<TeamBuilderViewProps> = ({
   allMoves = allGen1To5Moves,
   onSendToCalculator,
   onToast,
+  theme = 'dark',
 }) => {
+  const isLight = theme === 'light';
   // Current active sub-tab: 'equipo' | 'tipos' | 'estadisticas' | 'movimientos'
   const [activeTab, setActiveTab] = useState<BuilderSubTab>('equipo');
 
@@ -1355,13 +1359,23 @@ DEBES ESTRUCTURAR TU RESPUESTA OBLIGATORIAMENTE EN LAS SIGUIENTES 11 SECCIONES N
     }
 
     // 1. Try parsing as JSON first
-    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-      try {
-        const parsed = JSON.parse(trimmed);
+    let jsonStr = trimmed;
+    if (jsonStr.startsWith('```')) {
+      jsonStr = jsonStr.replace(/^```[a-z]*\s*/i, '').replace(/\s*```$/, '').trim();
+    }
 
-        // Case A: Standard app team object { name, members }
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && Array.isArray(parsed.members)) {
-          const members = parsed.members.map((m: unknown, idx: number) => sanitizeImportedMember(m, idx, dexMap));
+    if (jsonStr.startsWith('{') || jsonStr.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(jsonStr);
+
+        // Case A: Standard app team object { name, members } or with pokemon/team/sets arrays
+        const candidateMembers =
+          (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && (
+            parsed.members || parsed.pokemon || parsed.team || parsed.teamMembers || parsed.sets
+          )) || null;
+
+        if (candidateMembers && Array.isArray(candidateMembers)) {
+          const members = candidateMembers.map((m: unknown, idx: number) => sanitizeImportedMember(m, idx, dexMap));
           while (members.length < 6) members.push(createEmptyMember(members.length));
           const importedTeam: SavedTeam = {
             id: `team-${Date.now()}`,
@@ -1375,9 +1389,10 @@ DEBES ESTRUCTURAR TU RESPUESTA OBLIGATORIAMENTE EN LAS SIGUIENTES 11 SECCIONES N
         }
 
         // Case B: Collection of teams array [{ name, members }, ...]
-        if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object' && parsed[0].members) {
+        if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object' && (parsed[0].members || parsed[0].pokemon)) {
           const first = parsed[0];
-          const members = first.members.map((m: unknown, idx: number) => sanitizeImportedMember(m, idx, dexMap));
+          const rawList = first.members || first.pokemon || [];
+          const members = rawList.map((m: unknown, idx: number) => sanitizeImportedMember(m, idx, dexMap));
           while (members.length < 6) members.push(createEmptyMember(members.length));
           const importedTeam: SavedTeam = {
             id: `team-${Date.now()}`,
@@ -1559,10 +1574,12 @@ DEBES ESTRUCTURAR TU RESPUESTA OBLIGATORIAMENTE EN LAS SIGUIENTES 11 SECCIONES N
 
     setIsDriveLoading(true);
     try {
-      const data = await downloadDriveTeamFile(token, file.id);
-      applyAndImplementImportedTeam(data);
+      const data = await downloadDriveTeamFile(token, file.id, file.mimeType);
+      const cleanFileName = file.name.replace(/\.[^/.]+$/, '').replace('.poketeam', '');
+      const rawString = typeof data === 'string' ? data : JSON.stringify(data);
+      handleImportContent(rawString, cleanFileName || 'Equipo Drive');
       setShowImportModal(false);
-      onToast(`Equipo importado con éxito desde Google Drive.`);
+      onToast(`Equipo "${file.name}" importado con éxito desde Google Drive.`);
     } catch (err: unknown) {
       console.error('Error importing from Drive:', err);
       onToast(err instanceof Error ? err.message : 'Error al importar equipo de Google Drive.');
@@ -1649,7 +1666,7 @@ DEBES ESTRUCTURAR TU RESPUESTA OBLIGATORIAMENTE EN LAS SIGUIENTES 11 SECCIONES N
   const natureDef = NATURES.find(([id]) => id === currentMember.nature);
 
   return (
-    <div className="flex flex-col gap-2 relative text-slate-100">
+    <div className={`flex flex-col gap-2 relative ${isLight ? 'builder-light text-slate-900' : 'text-slate-100'}`}>
       {/* HIDDEN FILE INPUT FOR IMPORTING FROM PHONE STORAGE */}
       <input
         type="file"
@@ -1810,31 +1827,21 @@ DEBES ESTRUCTURAR TU RESPUESTA OBLIGATORIAMENTE EN LAS SIGUIENTES 11 SECCIONES N
             <span className="hidden sm:inline">Nuevo</span>
           </button>
 
-          {/* GUARDAR EN TELÉFONO */}
+          {/* IMPORTAR EQUIPO DESDE GOOGLE DRIVE */}
           <button
             type="button"
-            className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-emerald-400 border border-slate-700/80 transition-colors"
-            title="Guardar equipo en almacenamiento del teléfono"
-            onClick={handleSaveTeamLocal}
-          >
-            <Save size={15} />
-          </button>
-
-          {/* IMPORTAR EQUIPO (Flecha hacia abajo) */}
-          <button
-            type="button"
-            className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-emerald-400 border border-slate-700/80 transition-colors"
-            title="Importar equipo (Google Drive o almacenamiento local)"
+            className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-emerald-400 border border-slate-700/80 transition-colors cursor-pointer"
+            title="Importar equipo desde Google Drive"
             onClick={() => setShowImportModal(true)}
           >
             <Download size={15} />
           </button>
 
-          {/* EXPORTAR EQUIPO (Flecha hacia arriba) */}
+          {/* EXPORTAR EQUIPO A GOOGLE DRIVE */}
           <button
             type="button"
-            className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-slate-700/80 transition-colors"
-            title="Exportar equipo (Google Drive o almacenamiento local)"
+            className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-slate-700/80 transition-colors cursor-pointer"
+            title="Exportar equipo a Google Drive"
             onClick={() => setShowExportModal(true)}
           >
             <Upload size={15} />
@@ -2829,27 +2836,24 @@ DEBES ESTRUCTURAR TU RESPUESTA OBLIGATORIAMENTE EN LAS SIGUIENTES 11 SECCIONES N
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {[0, 1, 2, 3].map(moveIdx => (
-                  <div key={moveIdx} className="flex flex-col gap-1 p-2 rounded-xl bg-slate-900 border border-slate-800">
-                    <label className="text-[11px] font-bold text-slate-300">
-                      Movimiento #{moveIdx + 1}:
-                    </label>
-                    <select
-                      className="w-full py-1.5 px-2 rounded-lg bg-slate-950 border border-slate-700 text-white text-xs font-medium focus:outline-none focus:border-emerald-500"
-                      value={currentMember.moves[moveIdx] || ''}
-                      onChange={e => {
-                        const nextMoves = [...currentMember.moves] as [string, string, string, string];
-                        nextMoves[moveIdx] = e.target.value;
-                        updateMember(activeSlot, { moves: nextMoves });
-                      }}
-                    >
-                      <option value="">(Sin movimiento)</option>
-                      {currentAllowedMoves.map(mv => (
-                        <option key={mv.id} value={mv.nombre}>
-                          {mv.nombre} · {typeName(mv.tipo)} ({mv.categoria === 'physical' ? 'Físico' : mv.categoria === 'special' ? 'Especial' : 'Estado'} · {mv.categoria === 'status' ? '—' : mv.poder} P)
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  <MoveSearchableSelect
+                    key={moveIdx}
+                    slotNumber={moveIdx + 1}
+                    value={currentMember.moves[moveIdx] || ''}
+                    availableMoves={currentAllowedMoves}
+                    theme={theme}
+                    allowClear={true}
+                    onChange={(_moveId, moveName) => {
+                      const nextMoves = [...currentMember.moves] as [string, string, string, string];
+                      nextMoves[moveIdx] = moveName;
+                      updateMember(activeSlot, { moves: nextMoves });
+                    }}
+                    onClear={() => {
+                      const nextMoves = [...currentMember.moves] as [string, string, string, string];
+                      nextMoves[moveIdx] = '';
+                      updateMember(activeSlot, { moves: nextMoves });
+                    }}
+                  />
                 ))}
               </div>
             </>
@@ -3542,36 +3546,14 @@ DEBES ESTRUCTURAR TU RESPUESTA OBLIGATORIAMENTE EN LAS SIGUIENTES 11 SECCIONES N
             </div>
 
             <p className="text-xs text-slate-300">
-              Elige cómo deseas exportar tu equipo. Se guardará e implementará de forma segura.
+              Guarda y sincroniza tu equipo directamente en tu cuenta de Google Drive para respaldar e importar en cualquier dispositivo.
             </p>
 
             <div className="grid grid-cols-1 gap-2.5">
-              {/* OPCIÓN 1: ALMACENAMIENTO LOCAL / INTERNO */}
+              {/* GOOGLE DRIVE EXPORT */}
               <button
                 type="button"
-                className="flex items-start gap-3 p-3 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700 hover:border-emerald-500 text-left transition-all group"
-                onClick={handleExportToInternalStorage}
-              >
-                <div className="w-10 h-10 rounded-xl bg-emerald-950/80 border border-emerald-600/80 flex items-center justify-center text-emerald-400 shrink-0 group-hover:scale-105 transition-transform">
-                  <HardDrive size={20} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-bold text-white group-hover:text-emerald-300 flex items-center gap-1.5">
-                    <span>Almacenamiento Local (Carpeta de la App)</span>
-                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-600/30 text-emerald-300 font-normal">
-                      PokeMMO_Equipos
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-400 mt-0.5">
-                    Guarda el archivo en el almacenamiento local de tu dispositivo para tener acceso offline permanente.
-                  </div>
-                </div>
-              </button>
-
-              {/* OPCIÓN 2: GOOGLE DRIVE */}
-              <button
-                type="button"
-                className="flex items-start gap-3 p-3 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700 hover:border-sky-500 text-left transition-all group"
+                className="flex items-start gap-3 p-3.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700 hover:border-sky-500 text-left transition-all group cursor-pointer"
                 onClick={handleExportToGoogleDrive}
                 disabled={isDriveLoading}
               >
@@ -3634,212 +3616,155 @@ DEBES ESTRUCTURAR TU RESPUESTA OBLIGATORIAMENTE EN LAS SIGUIENTES 11 SECCIONES N
               </button>
             </div>
 
-            {/* SELECTION TABS: GOOGLE DRIVE vs ALMACENAMIENTO LOCAL */}
-            <div className="grid grid-cols-2 rounded-xl overflow-hidden border border-slate-700/80 bg-slate-900 shadow-inner">
-              <button
-                type="button"
-                className={`py-2 px-3 text-center font-bold text-xs flex items-center justify-center gap-1.5 transition-colors ${
-                  importSourceTab === 'drive'
-                    ? 'bg-sky-600 text-white shadow'
-                    : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800'
-                }`}
-                onClick={() => {
-                  setImportSourceTab('drive');
-                  if (driveToken) refreshDriveFiles();
-                }}
-              >
-                <Cloud size={14} />
-                <span>Google Drive</span>
-              </button>
-              <button
-                type="button"
-                className={`py-2 px-3 text-center font-bold text-xs flex items-center justify-center gap-1.5 transition-colors border-l border-slate-700/60 ${
-                  importSourceTab === 'local'
-                    ? 'bg-emerald-600 text-white shadow'
-                    : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800'
-                }`}
-                onClick={() => setImportSourceTab('local')}
-              >
-                <HardDrive size={14} />
-                <span>Almacenamiento Local</span>
-              </button>
-            </div>
+            {/* GOOGLE DRIVE IMPORT SECTION */}
+            <div className="flex flex-col gap-3">
+              {!googleUser || !driveToken ? (
+                <div className="flex flex-col items-center justify-center p-6 text-center gap-3 bg-slate-900/60 rounded-xl border border-slate-800">
+                  <Cloud size={32} className="text-sky-400" />
+                  <div>
+                    <div className="text-xs font-bold text-white">Conecta tu cuenta de Google Drive</div>
+                    <p className="text-[11px] text-slate-400 mt-1 max-w-xs">
+                      Inicia sesión con Google para sincronizar e importar tus equipos guardados en la nube.
+                    </p>
+                  </div>
 
-            {/* TAB 1: GOOGLE DRIVE IMPORT */}
-            {importSourceTab === 'drive' && (
-              <div className="flex flex-col gap-3">
-                {!googleUser || !driveToken ? (
-                  <div className="flex flex-col items-center justify-center p-6 text-center gap-3 bg-slate-900/60 rounded-xl border border-slate-800">
-                    <Cloud size={32} className="text-sky-400" />
-                    <div>
-                      <div className="text-xs font-bold text-white">Conecta tu cuenta de Google Drive</div>
-                      <p className="text-[11px] text-slate-400 mt-1 max-w-xs">
-                        Inicia sesión con Google para sincronizar e importar tus equipos guardados en la nube.
+                  <button
+                    type="button"
+                    className="gsi-material-button mt-1"
+                    onClick={handleConnectGoogleDrive}
+                    disabled={isDriveLoading}
+                  >
+                    <div className="gsi-material-button-state"></div>
+                    <div className="gsi-material-button-content-wrapper">
+                      <div className="gsi-material-button-icon">
+                        <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" style={{ display: 'block' }}>
+                          <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
+                          <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
+                          <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
+                          <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
+                        </svg>
+                      </div>
+                      <span className="gsi-material-button-contents">Sign in with Google</span>
+                    </div>
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2.5">
+                  {/* User bar */}
+                  <div className="flex items-center justify-between p-2 rounded-xl bg-sky-950/40 border border-sky-800/40 text-xs text-sky-200">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <Cloud size={14} className="text-sky-400 shrink-0" />
+                      <span className="truncate font-semibold">{googleUser.email || 'Conectado a Google Drive'}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-sky-300 hover:text-white transition-colors cursor-pointer"
+                        title="Actualizar lista de archivos"
+                        onClick={() => refreshDriveFiles()}
+                        disabled={isDriveLoading}
+                      >
+                        <RotateCcw size={13} className={isDriveLoading ? 'animate-spin' : ''} />
+                      </button>
+                      <button
+                        type="button"
+                        className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-300 cursor-pointer"
+                        onClick={handleDisconnectGoogleDrive}
+                      >
+                        Cerrar sesión
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Files list */}
+                  {isDriveLoading ? (
+                    <div className="py-8 flex flex-col items-center justify-center gap-2 text-slate-400">
+                      <Loader2 size={24} className="animate-spin text-sky-400" />
+                      <span className="text-xs">Consultando tus equipos en Google Drive...</span>
+                    </div>
+                  ) : driveFiles.length === 0 ? (
+                    <div className="p-6 text-center text-slate-400 bg-slate-900/60 rounded-xl border border-slate-800 flex flex-col items-center gap-2">
+                      <Cloud size={28} className="text-slate-500" />
+                      <p className="text-xs font-semibold text-white">No hay equipos en Google Drive</p>
+                      <p className="text-[11px] text-slate-400 max-w-xs">
+                        Exporta tu equipo actual usando el botón de exportar (flecha hacia arriba) y seleccionando Google Drive.
                       </p>
                     </div>
-
-                    <button
-                      type="button"
-                      className="gsi-material-button mt-1"
-                      onClick={handleConnectGoogleDrive}
-                      disabled={isDriveLoading}
-                    >
-                      <div className="gsi-material-button-state"></div>
-                      <div className="gsi-material-button-content-wrapper">
-                        <div className="gsi-material-button-icon">
-                          <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" style={{ display: 'block' }}>
-                            <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
-                            <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
-                            <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
-                            <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
-                          </svg>
-                        </div>
-                        <span className="gsi-material-button-contents">Sign in with Google</span>
-                      </div>
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-2.5">
-                    {/* User bar */}
-                    <div className="flex items-center justify-between p-2 rounded-xl bg-sky-950/40 border border-sky-800/40 text-xs text-sky-200">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <Cloud size={14} className="text-sky-400 shrink-0" />
-                        <span className="truncate font-semibold">{googleUser.email || 'Conectado a Google Drive'}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <button
-                          type="button"
-                          className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-sky-300 hover:text-white transition-colors"
-                          title="Actualizar lista de archivos"
-                          onClick={() => refreshDriveFiles()}
-                          disabled={isDriveLoading}
+                  ) : (
+                    <div className="flex flex-col gap-1.5 max-h-56 overflow-y-auto pr-1">
+                      {driveFiles.map(file => (
+                        <div
+                          key={file.id}
+                          className="flex items-center justify-between p-2 rounded-xl bg-slate-900/90 border border-slate-700 hover:border-sky-500 transition-colors gap-2"
                         >
-                          <RotateCcw size={13} className={isDriveLoading ? 'animate-spin' : ''} />
-                        </button>
-                        <button
-                          type="button"
-                          className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-300"
-                          onClick={handleDisconnectGoogleDrive}
-                        >
-                          Cerrar sesión
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Files list */}
-                    {isDriveLoading ? (
-                      <div className="py-8 flex flex-col items-center justify-center gap-2 text-slate-400">
-                        <Loader2 size={24} className="animate-spin text-sky-400" />
-                        <span className="text-xs">Consultando tus equipos en Google Drive...</span>
-                      </div>
-                    ) : driveFiles.length === 0 ? (
-                      <div className="p-6 text-center text-slate-400 bg-slate-900/60 rounded-xl border border-slate-800 flex flex-col items-center gap-2">
-                        <Cloud size={28} className="text-slate-500" />
-                        <p className="text-xs font-semibold text-white">No hay equipos en Google Drive</p>
-                        <p className="text-[11px] text-slate-400 max-w-xs">
-                          Exporta tu equipo actual usando el botón de exportar (flecha hacia arriba) y seleccionando Google Drive.
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col gap-1.5 max-h-56 overflow-y-auto pr-1">
-                        {driveFiles.map(file => (
-                          <div
-                            key={file.id}
-                            className="flex items-center justify-between p-2 rounded-xl bg-slate-900/90 border border-slate-700 hover:border-sky-500 transition-colors gap-2"
-                          >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <FileSpreadsheet size={16} className="text-sky-400 shrink-0" />
-                              <div className="min-w-0">
-                                <div className="text-xs font-bold text-white truncate">
-                                  {file.name.replace(/\.poketeam\.json$/, '')}
-                                </div>
-                                <div className="text-[10px] text-slate-400">
-                                  {new Date(file.modifiedTime).toLocaleDateString()}
-                                </div>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <FileSpreadsheet size={16} className="text-sky-400 shrink-0" />
+                            <div className="min-w-0">
+                              <div className="text-xs font-bold text-white truncate">
+                                {file.name.replace(/\.poketeam\.json$/, '')}
+                              </div>
+                              <div className="text-[10px] text-slate-400">
+                                {new Date(file.modifiedTime).toLocaleDateString()}
                               </div>
                             </div>
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <button
-                                type="button"
-                                className="py-1 px-2.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs flex items-center gap-1 shadow"
-                                onClick={() => handleImportFromDrive(file)}
-                                disabled={isDriveLoading}
-                              >
-                                <Download size={12} />
-                                <span>Importar</span>
-                              </button>
-                              <button
-                                type="button"
-                                className="p-1 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-950/60 transition-colors"
-                                title="Eliminar de Google Drive"
-                                onClick={() => setDriveFileToDelete(file)}
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
                           </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* TAB 2: ALMACENAMIENTO LOCAL IMPORT */}
-            {importSourceTab === 'local' && (
-              <div className="flex flex-col gap-3">
-                {/* BOTÓN PARA SUBIR ARCHIVO */}
-                <div className="p-4 rounded-xl border border-dashed border-emerald-500/50 bg-emerald-950/20 flex flex-col items-center justify-center gap-2 text-center">
-                  <Download size={22} className="text-emerald-400" />
-                  <div className="text-xs font-bold text-white">
-                    Cargar Archivo desde tu Almacenamiento Local
-                  </div>
-                  <div className="text-[11px] text-slate-400">
-                    Formatos compatibles: .json, .txt, .poketeam
-                  </div>
-                  <button
-                    type="button"
-                    className="mt-1 py-2 px-4 rounded-xl font-bold text-xs bg-emerald-600 hover:bg-emerald-500 text-white shadow flex items-center gap-2 cursor-pointer"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <FolderOpen size={14} />
-                    <span>Explorar Archivos Locales</span>
-                  </button>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              className="py-1 px-2.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs flex items-center gap-1 shadow cursor-pointer"
+                              onClick={() => handleImportFromDrive(file)}
+                              disabled={isDriveLoading}
+                            >
+                              <Download size={12} />
+                              <span>Importar</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="p-1 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-950/60 transition-colors cursor-pointer"
+                              title="Eliminar de Google Drive"
+                              onClick={() => setDriveFileToDelete(file)}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
+              )}
 
-                {/* O PEGAR TEXTO */}
-                <div className="flex flex-col gap-2">
-                  <label className="text-xs font-bold text-slate-300 flex items-center justify-between">
-                    <span>O pega el texto del equipo (Showdown / PokeMMO):</span>
-                  </label>
-                  <textarea
-                    rows={4}
-                    className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-200 font-mono text-xs focus:outline-none focus:border-emerald-500"
-                    placeholder={`Rotom-Wash @ Leftovers\nAbility: Levitate\nEVs: 252 HP / 252 Def / 4 SpD\nBold Nature\n- Volt Switch\n- Hydro Pump\n- Will-O-Wisp\n- Pain Split`}
-                    value={importPasteText}
-                    onChange={e => setImportPasteText(e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    disabled={!importPasteText.trim()}
-                    className={`py-2 px-4 rounded-xl font-bold text-xs shadow flex items-center justify-center gap-2 transition-all ${
-                      importPasteText.trim()
-                        ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer'
-                        : 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                    }`}
-                    onClick={() => {
-                      handleImportContent(importPasteText, 'Equipo Pegado');
-                      setImportPasteText('');
-                      setShowImportModal(false);
-                    }}
-                  >
-                    <Check size={14} />
-                    <span>Implementar Equipo Pegado</span>
-                  </button>
-                </div>
+              {/* O PEGAR TEXTO SHOWDOWN DIRECTAMENTE */}
+              <div className="flex flex-col gap-2 pt-2 border-t border-slate-800">
+                <label className="text-xs font-bold text-slate-300">
+                  O pega texto del equipo (Showdown):
+                </label>
+                <textarea
+                  rows={3}
+                  className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-200 font-mono text-xs focus:outline-none focus:border-sky-500"
+                  placeholder={`Rotom-Wash @ Leftovers\nAbility: Levitate\nEVs: 252 HP / 252 Def / 4 SpD\nBold Nature\n- Volt Switch\n- Hydro Pump\n- Will-O-Wisp\n- Pain Split`}
+                  value={importPasteText}
+                  onChange={e => setImportPasteText(e.target.value)}
+                />
+                <button
+                  type="button"
+                  disabled={!importPasteText.trim()}
+                  className={`py-2 px-4 rounded-xl font-bold text-xs shadow flex items-center justify-center gap-2 transition-all ${
+                    importPasteText.trim()
+                      ? 'bg-sky-600 hover:bg-sky-500 text-white cursor-pointer'
+                      : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                  }`}
+                  onClick={() => {
+                    handleImportContent(importPasteText, 'Equipo Pegado');
+                    setImportPasteText('');
+                    setShowImportModal(false);
+                  }}
+                >
+                  <Check size={14} />
+                  <span>Implementar Equipo Pegado</span>
+                </button>
               </div>
-            )}
+            </div>
 
             <div className="flex justify-end pt-2 border-t border-slate-800">
               <button

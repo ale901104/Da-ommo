@@ -42,6 +42,7 @@ type SortOption =
   | 'atk-desc'
   | 'spa-desc'
   | 'def-desc'
+  | 'spd-desc'
   | 'hp-desc';
 
 const PAGE_SIZE = 24;
@@ -56,7 +57,6 @@ export const PokemonDexView: React.FC<PokemonDexViewProps> = ({
   const [selectedType1, setSelectedType1] = useState<string>('all');
   const [selectedType2, setSelectedType2] = useState<string>('all');
   const [activeModalSlot, setActiveModalSlot] = useState<1 | 2 | null>(null);
-  const [selectedGen, setSelectedGen] = useState<number | 'all'>('all');
   const [sortBy, setSortBy] = useState<SortOption>('num-asc');
   const [page, setPage] = useState(1);
   const [expandedPkId, setExpandedPkId] = useState<string | null>(null);
@@ -64,11 +64,6 @@ export const PokemonDexView: React.FC<PokemonDexViewProps> = ({
   // Filter & sort
   const filteredList = useMemo(() => {
     let result = rawDexList;
-
-    // Filter by Gen
-    if (selectedGen !== 'all') {
-      result = result.filter(p => p.generation === selectedGen);
-    }
 
     // Filter by Dual Type (Slot 1 and Slot 2)
     const hasType1 = selectedType1 !== 'all';
@@ -129,13 +124,15 @@ export const PokemonDexView: React.FC<PokemonDexViewProps> = ({
           return b.spa - a.spa;
         case 'def-desc':
           return b.def - a.def;
+        case 'spd-desc':
+          return b.spd - a.spd;
         case 'hp-desc':
           return b.hp - a.hp;
         default:
           return 0;
       }
     });
-  }, [search, selectedType1, selectedType2, selectedGen, sortBy]);
+  }, [search, selectedType1, selectedType2, sortBy]);
 
   const totalPages = Math.max(1, Math.ceil(filteredList.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -281,27 +278,6 @@ export const PokemonDexView: React.FC<PokemonDexViewProps> = ({
           </div>
         </div>
 
-        {/* GENERATIONS TABS */}
-        <div className="flex items-center gap-1.5 flex-wrap mb-2">
-          {(['all', 1, 2, 3, 4, 5] as const).map(gen => (
-            <button
-              key={String(gen)}
-              type="button"
-              className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
-                selectedGen === gen
-                  ? 'bg-emerald-600 border-emerald-400 text-white'
-                  : 'bg-slate-800/60 border-slate-700/40 text-slate-300 hover:bg-slate-800'
-              }`}
-              onClick={() => {
-                setSelectedGen(gen);
-                setPage(1);
-              }}
-            >
-              {gen === 'all' ? 'Todas las Gen' : `Gen ${gen}`}
-            </button>
-          ))}
-        </div>
-
         {/* SORT ROW */}
         <div className="pt-2 border-t border-slate-700/40">
           <div className="micro-field">
@@ -319,6 +295,7 @@ export const PokemonDexView: React.FC<PokemonDexViewProps> = ({
               <option value="atk-desc">Ataque Físico (Mayor)</option>
               <option value="spa-desc">Ataque Especial (Mayor)</option>
               <option value="def-desc">Defensa Física (Mayor)</option>
+              <option value="spd-desc">Defensa Especial (Mayor)</option>
               <option value="hp-desc">Puntos de Salud (Mayor PS)</option>
             </select>
           </div>
@@ -380,7 +357,7 @@ export const PokemonDexView: React.FC<PokemonDexViewProps> = ({
                       {rawPk.tipo2 && <TypeBadge type={rawPk.tipo2} size="sm" />}
                     </div>
                     <div className="text-[10px] text-slate-400 font-medium">
-                      Gen {rawPk.generation} · PokeMMO
+                      Gen {rawPk.generation}
                     </div>
                   </div>
                 </div>

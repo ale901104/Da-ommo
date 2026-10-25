@@ -370,6 +370,32 @@ export function getPokemonAbilities(pokemon?: Pokemon | null): [string, string][
   });
 }
 
+export interface HiddenPowerTypeOption {
+  id: string;
+  tipo: string;
+  label: string;
+  moveName: string;
+}
+
+export const HIDDEN_POWER_TYPES: HiddenPowerTypeOption[] = [
+  { id: 'hidden-power-fire', tipo: 'fire', label: 'Fuego', moveName: 'Poder Oculto [Fuego]' },
+  { id: 'hidden-power-water', tipo: 'water', label: 'Agua', moveName: 'Poder Oculto [Agua]' },
+  { id: 'hidden-power-grass', tipo: 'grass', label: 'Planta', moveName: 'Poder Oculto [Planta]' },
+  { id: 'hidden-power-electric', tipo: 'electric', label: 'Eléctrico', moveName: 'Poder Oculto [Eléctrico]' },
+  { id: 'hidden-power-ice', tipo: 'ice', label: 'Hielo', moveName: 'Poder Oculto [Hielo]' },
+  { id: 'hidden-power-fighting', tipo: 'fighting', label: 'Lucha', moveName: 'Poder Oculto [Lucha]' },
+  { id: 'hidden-power-poison', tipo: 'poison', label: 'Veneno', moveName: 'Poder Oculto [Veneno]' },
+  { id: 'hidden-power-ground', tipo: 'ground', label: 'Tierra', moveName: 'Poder Oculto [Tierra]' },
+  { id: 'hidden-power-flying', tipo: 'flying', label: 'Volador', moveName: 'Poder Oculto [Volador]' },
+  { id: 'hidden-power-psychic', tipo: 'psychic', label: 'Psíquico', moveName: 'Poder Oculto [Psíquico]' },
+  { id: 'hidden-power-bug', tipo: 'bug', label: 'Bicho', moveName: 'Poder Oculto [Bicho]' },
+  { id: 'hidden-power-rock', tipo: 'rock', label: 'Roca', moveName: 'Poder Oculto [Roca]' },
+  { id: 'hidden-power-ghost', tipo: 'ghost', label: 'Fantasma', moveName: 'Poder Oculto [Fantasma]' },
+  { id: 'hidden-power-dragon', tipo: 'dragon', label: 'Dragón', moveName: 'Poder Oculto [Dragón]' },
+  { id: 'hidden-power-dark', tipo: 'dark', label: 'Siniestro', moveName: 'Poder Oculto [Siniestro]' },
+  { id: 'hidden-power-steel', tipo: 'steel', label: 'Acero', moveName: 'Poder Oculto [Acero]' },
+];
+
 /**
  * Returns strictly the learnable moves for a specific Pokémon.
  * If the Pokémon defines a learnset, filters the master moves list to only those moves.
@@ -379,10 +405,16 @@ export function getPokemonMoves(pokemon?: Pokemon | null, allMoves: Move[] = [])
     return allMoves;
   }
   const set = new Set(pokemon.learnset.map(s => s.toLowerCase().replace(/[^a-z0-9]/g, '')));
+  const learnsHiddenPower = set.has('hiddenpower') || pokemon.learnset.some(l => l.includes('hidden-power') || l.includes('hiddenpower'));
+
   const filtered = allMoves.filter(m => {
     const slugKey = m.id.toLowerCase().replace(/[^a-z0-9]/g, '');
     const showdownKey = (m.showdownKey || '').toLowerCase();
+    if (learnsHiddenPower && (m.id.startsWith('hidden-power') || m.id === 'hiddenpower' || m.nombre.toLowerCase().startsWith('poder oculto'))) {
+      return true;
+    }
     return set.has(slugKey) || (showdownKey && set.has(showdownKey));
   });
   return filtered.length > 0 ? filtered : allMoves;
 }
+

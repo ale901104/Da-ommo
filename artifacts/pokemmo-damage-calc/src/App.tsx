@@ -65,6 +65,7 @@ import { PokemonDexView } from './components/PokemonDexView';
 import { MovesView } from './components/MovesView';
 import { SettingsView } from './components/SettingsView';
 import { InfoView } from './components/InfoView';
+import { MoveSearchableSelect } from './components/MoveSearchableSelect';
 
 type ModalKind = 'pokemon' | 'movimiento' | 'apk-guide' | 'ivev-attacker' | 'ivev-defender' | 'dex-general' | null;
 type Weather = 'none' | 'sun' | 'rain' | 'sand' | 'hail';
@@ -1656,22 +1657,11 @@ function App() {
       </header>
 
       {/* Calculator View (Hero + App Layout Grid) */}
+      {/* Calculator View (Starts directly beneath top menu) */}
       {currentView === 'calc' && (
         <>
-          <section className="hero">
-            <div className="flex items-center justify-between">
-              <div className="eyebrow">PokéMMO Battle Kit · v2.1</div>
-            </div>
-        <h1>
-          Calcula tu
-          <br />
-          siguiente turno.
-        </h1>
-        <p>Daño exacto, orden de velocidad y control total de IV/EV al instante.</p>
-      </section>
-
-      {/* Responsive Landscape / Portrait Grid Container */}
-      <div className="app-layout-grid">
+          {/* Responsive Landscape / Portrait Grid Container */}
+          <div className="app-layout-grid mt-1">
         {/* COLUMN 1: ENFRENTAMIENTO (SIDE-BY-SIDE) & MOVIMIENTO & CONDICIONES */}
         <div className="flex flex-col gap-3">
           {/* Matchup Card: Attacker and Defender Side by Side with Integrated Boosts & Status */}
@@ -2177,11 +2167,10 @@ function App() {
 
             {/* Campos separados: Campo Atacante (Izquierda) y Campo Defensor (Derecha) */}
             <div className="battle-fields-grid">
-              {/* Campo Atacante (Izquierda) */}
+              {/* Campo Atacante */}
               <div className="battle-field-col atk-field">
                 <div className="battle-field-header">
                   <span className="combatant-role-badge">Campo Atacante</span>
-                  <small className="field-side-hint">Izquierda</small>
                 </div>
 
                 <div className="field-effects-list">
@@ -2239,11 +2228,10 @@ function App() {
                 </div>
               </div>
 
-              {/* Campo Defensor (Derecha) */}
+              {/* Campo Defensor */}
               <div className="battle-field-col def-field">
                 <div className="battle-field-header def">
                   <span className="combatant-role-badge def">Campo Defensor</span>
-                  <small className="field-side-hint">Derecha</small>
                 </div>
 
                 <div className="field-effects-list">
@@ -2304,7 +2292,7 @@ function App() {
           </section>
 
           {/* 3. Movimiento (Standalone Move Card with Golpe Crítico option) */}
-          <section className="glass move-card" aria-label="Movimiento">
+          <section className="glass move-card !overflow-visible relative z-30" aria-label="Movimiento">
             <div className="section-head">
               <div className="flex items-center gap-2">
                 <span className="section-title">Movimiento</span>
@@ -2313,37 +2301,23 @@ function App() {
               <Swords size={15} color="#6d9290" />
             </div>
 
-            <div className="move-card-body">
-              {/* Move Selection Row */}
-              <div className="move-selection-row">
-                <div className="move-icon">
-                  <Swords size={17} />
-                </div>
-                <div className="field flex-1">
-                  <label htmlFor="move-choice">Seleccionar ataque</label>
-                  <select
-                    id="move-choice"
-                    data-testid="select-move"
-                    value={moveId}
-                    onChange={e => setMoveId(e.target.value)}
-                  >
-                    {attackerAllowedMoves.map(m => (
-                      <option key={m.id} value={m.id}>
-                        {m.nombre} · {typeName(m.tipo)} ({m.categoria === 'physical' ? 'Físico' : 'Especial'} · {m.poder} P)
-                        {m.priority ? ` [Prio +${m.priority}]` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {move && (
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <TypeBadge type={move.tipo} size="sm" />
-                    <div className="move-power">{move.poder} P</div>
-                    <span className={`move-category-chip ${move.categoria}`}>
-                      {move.categoria === 'physical' ? 'Físico' : 'Especial'}
-                    </span>
-                  </div>
-                )}
+            <div className="move-card-body !overflow-visible relative">
+              {/* Move Selection: Wide Predictive Search Bar with Type Color and Full Name */}
+              <div className="w-full mb-2 relative z-40">
+                <MoveSearchableSelect
+                  id="move-choice"
+                  label="Ataque del Atacante"
+                  value={moveId}
+                  availableMoves={attackerAllowedMoves}
+                  theme={theme}
+                  allowClear={false}
+                  onChange={(mId, _mName, mObj) => {
+                    setMoveId(mId);
+                    if (mObj && mObj.id && !moves.some(m => m.id === mObj.id)) {
+                      setMoves(prev => [mObj, ...prev]);
+                    }
+                  }}
+                />
               </div>
 
               {/* Option: Golpe Crítico */}
@@ -2665,6 +2639,7 @@ function App() {
       {/* Main View: Builder (6-Pokemon PvP 1v1) */}
       {currentView === 'builder' && (
         <TeamBuilderView
+          theme={theme}
           pokemonList={pokemon}
           equipoOU={ouPokemon}
           equipoUU={uuPokemon}

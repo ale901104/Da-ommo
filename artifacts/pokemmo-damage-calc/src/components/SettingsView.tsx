@@ -11,6 +11,8 @@ import {
   ImagePlus,
   Key,
   Loader2,
+  LogOut,
+  Mail,
   Moon,
   Palette,
   Pin,
@@ -20,6 +22,13 @@ import {
   Sun,
   Trash2,
 } from 'lucide-react';
+import type { User } from 'firebase/auth';
+import {
+  initDriveAuth,
+  signInWithGoogle,
+  signOutGoogle,
+  getCurrentGoogleUser,
+} from '../lib/google-drive';
 
 export type BackgroundChoice = 'mint' | 'dusk' | 'aurora' | 'custom';
 export type ThemeChoice = 'light' | 'dark';
@@ -70,9 +79,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <span className="text-sm font-bold text-white">
                 {theme === 'dark' ? 'Modo Oscuro' : 'Modo Día'}
               </span>
-              <span className="text-[11px] text-slate-400">
-                {theme === 'dark' ? 'Tema oscuro activo' : 'Tema claro activo'}
-              </span>
             </div>
           </div>
 
@@ -103,7 +109,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
       {/* SECTION 2: PERSONALIZACIÓN DE FONDO */}
       <section className="glass combat-card" aria-label="Personalización de fondo">
-        <div className="section-head">
+        <div className="section-head mb-3">
           <div className="flex items-center gap-2">
             <ImagePlus size={16} className="text-emerald-400" />
             <strong className="text-sm text-white font-bold">Personalización de Fondo</strong>
@@ -112,10 +118,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <span className="ko-badge">Fondo Personalizado</span>
           )}
         </div>
-
-        <p className="text-xs text-slate-300 mt-1 mb-3">
-          Selecciona un gradiente temático o carga tu propia imagen de wallpaper desde tu dispositivo. Cuando seleccionas climas activos, el fondo puede adaptarse automáticamente o permanecer fijo según prefieras.
-        </p>
 
         {/* PRESET WALLPAPERS */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mb-3">
@@ -232,7 +234,7 @@ export const AI_PROVIDERS: Record<AiProvider, AiProviderConfig> = {
     apiKeyHelpUrl: 'https://aistudio.google.com/app/apikey',
     apiKeyHelpText: 'Obtener en Google AI Studio (Gratis)',
     badge: 'gemini-3.8-flash',
-    description: 'Google Gemini 3 (gemini-3.8-flash). Máximo razonamiento táctico, análisis de movimientos y sinergias competitivas de PokeMMO.',
+    description: 'Google Gemini 3 (gemini-3.8-flash). Máximo razonamiento táctico y análisis competitivo.',
   },
   openai: {
     id: 'openai',
@@ -243,7 +245,7 @@ export const AI_PROVIDERS: Record<AiProvider, AiProviderConfig> = {
     apiKeyHelpUrl: 'https://platform.openai.com/api-keys',
     apiKeyHelpText: 'Obtener en OpenAI Platform',
     badge: 'gpt-4o-mini',
-    description: 'Excelente razonamiento táctico y evaluación de sinergias para Pokémon competitivo.',
+    description: 'Razonamiento táctico y evaluación de sinergias para Pokémon competitivo.',
   },
   groq: {
     id: 'groq',
@@ -254,7 +256,7 @@ export const AI_PROVIDERS: Record<AiProvider, AiProviderConfig> = {
     apiKeyHelpUrl: 'https://console.groq.com/keys',
     apiKeyHelpText: 'Obtener en Groq Console (Gratis)',
     badge: 'llama-3.3-70b-versatile',
-    description: 'Ultra veloz y de código abierto (Llama 3.3 70B Versatile). Claves de prueba gratuitas.',
+    description: 'Ultra veloz y de código abierto (Llama 3.3 70B Versatile).',
   },
 };
 
@@ -484,11 +486,11 @@ export const AiProviderSection: React.FC<AiProviderSectionProps> = ({ onToast })
 
   return (
     <section className="glass combat-card" aria-label="Proveedor de Inteligencia Artificial">
-      <div className="section-head">
+      <div className="section-head mb-3">
         <div className="flex items-center gap-2">
           <Brain size={18} className="text-violet-400" />
           <strong className="text-sm text-white font-bold">
-            Inteligencia Artificial · Asistente Estratégico PokeMMO
+            Inteligencia Artificial · Asistente Estratégico
           </strong>
         </div>
         <span
@@ -501,10 +503,6 @@ export const AiProviderSection: React.FC<AiProviderSectionProps> = ({ onToast })
           {isConfigured ? '✓ Clave Configurada' : 'Sin Clave'}
         </span>
       </div>
-
-      <p className="text-xs text-slate-300 mt-1 mb-3">
-        Elige tu proveedor preferido de IA para analizar tus equipos, coberturas defensivas y debilidades competitivas en PokeMMO.
-      </p>
 
       {/* SELECTOR DE PROVEEDOR (DROPDOWN / SPINNER) */}
       <div className="flex flex-col gap-3 p-3 rounded-xl bg-slate-900/80 border border-slate-700/60">
@@ -534,10 +532,6 @@ export const AiProviderSection: React.FC<AiProviderSectionProps> = ({ onToast })
               className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
             />
           </div>
-
-          <span className="text-[11px] text-slate-400 italic">
-            {currentConfig.description}
-          </span>
         </div>
 
         {/* INPUT DE API KEY */}
@@ -645,13 +639,6 @@ export const AiProviderSection: React.FC<AiProviderSectionProps> = ({ onToast })
           <span>Obtener Clave</span>
           <ExternalLink size={13} />
         </a>
-      </div>
-
-      {/* NOTA DE PRIVACIDAD Y ALMACENAMIENTO LOCAL APK */}
-      <div className="text-[11px] text-slate-400 leading-relaxed px-1">
-        🔒 <strong className="text-slate-300">Privacidad y Almacenamiento Local (APK):</strong> Tu clave API y proveedor se guardan
-        únicamente de forma local en tu dispositivo (LocalStorage / SharedPreferences de Android). Las consultas se envían
-        directamente desde tu app a la API seleccionada sin pasar por intermediarios.
       </div>
     </section>
   );
