@@ -405,16 +405,59 @@ export function getPokemonMoves(pokemon?: Pokemon | null, allMoves: Move[] = [])
     return allMoves;
   }
   const set = new Set(pokemon.learnset.map(s => s.toLowerCase().replace(/[^a-z0-9]/g, '')));
-  const learnsHiddenPower = set.has('hiddenpower') || pokemon.learnset.some(l => l.includes('hidden-power') || l.includes('hiddenpower'));
+
+  const pId = (pokemon.id || '').toLowerCase();
+  const pName = (pokemon.nombre || '').toLowerCase();
+
+  const isRotomWash =
+    pId.includes('rotom-wash') ||
+    pId.includes('rotomwash') ||
+    pName.includes('rotom wash') ||
+    pName.includes('rotom lavado');
+  const isSableye = pId.includes('sableye') || pName.includes('sableye');
+
+  if (isRotomWash) {
+    set.add('hydropump');
+    set.add('hidrobomba');
+  }
+  if (isSableye) {
+    set.add('lightscreen');
+    set.add('pantallaluz');
+    set.add('reflect');
+    set.add('reflejo');
+  }
+
+  const learnsHiddenPower =
+    set.has('hiddenpower') ||
+    set.has('poderoculto') ||
+    pokemon.learnset.some(l => l.includes('hidden-power') || l.includes('hiddenpower') || l.includes('poder-oculto'));
 
   const filtered = allMoves.filter(m => {
     const slugKey = m.id.toLowerCase().replace(/[^a-z0-9]/g, '');
     const showdownKey = (m.showdownKey || '').toLowerCase();
-    if (learnsHiddenPower && (m.id.startsWith('hidden-power') || m.id === 'hiddenpower' || m.nombre.toLowerCase().startsWith('poder oculto'))) {
+    if (
+      learnsHiddenPower &&
+      (m.id.startsWith('hidden-power') || m.id === 'hiddenpower' || m.nombre.toLowerCase().startsWith('poder oculto'))
+    ) {
+      return true;
+    }
+    if (isRotomWash && (slugKey === 'hydropump' || slugKey === 'hidrobomba' || showdownKey === 'hydropump')) {
+      return true;
+    }
+    if (
+      isSableye &&
+      (slugKey === 'lightscreen' ||
+        slugKey === 'pantallaluz' ||
+        showdownKey === 'lightscreen' ||
+        slugKey === 'reflect' ||
+        slugKey === 'reflejo' ||
+        showdownKey === 'reflect')
+    ) {
       return true;
     }
     return set.has(slugKey) || (showdownKey && set.has(showdownKey));
   });
   return filtered.length > 0 ? filtered : allMoves;
 }
+
 

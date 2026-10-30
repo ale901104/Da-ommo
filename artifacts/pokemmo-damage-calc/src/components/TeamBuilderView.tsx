@@ -1827,16 +1827,6 @@ DEBES ESTRUCTURAR TU RESPUESTA OBLIGATORIAMENTE EN LAS SIGUIENTES 11 SECCIONES N
             <span className="hidden sm:inline">Nuevo</span>
           </button>
 
-          {/* IMPORTAR EQUIPO DESDE GOOGLE DRIVE */}
-          <button
-            type="button"
-            className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-emerald-400 border border-slate-700/80 transition-colors cursor-pointer"
-            title="Importar equipo desde Google Drive"
-            onClick={() => setShowImportModal(true)}
-          >
-            <Download size={15} />
-          </button>
-
           {/* EXPORTAR EQUIPO A GOOGLE DRIVE */}
           <button
             type="button"

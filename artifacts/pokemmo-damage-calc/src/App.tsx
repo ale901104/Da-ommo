@@ -67,8 +67,19 @@ import { SettingsView } from './components/SettingsView';
 import { InfoView } from './components/InfoView';
 import { MoveSearchableSelect } from './components/MoveSearchableSelect';
 
-type ModalKind = 'pokemon' | 'movimiento' | 'apk-guide' | 'ivev-attacker' | 'ivev-defender' | 'dex-general' | null;
+type ModalKind = 'pokemon' | 'movimiento' | 'apk-guide' | 'ivev-attacker' | 'ivev-defender' | 'boosts-attacker' | 'boosts-defender' | 'dex-general' | null;
 type Weather = 'none' | 'sun' | 'rain' | 'sand' | 'hail';
+
+function formatBoostsSummary(boosts: StageValues): string {
+  const active = STAGE_KEYS.filter(k => boosts[k] !== 0).map(k => {
+    const val = boosts[k];
+    const sign = val > 0 ? `+${val}` : `${val}`;
+    return `${STAT_LABELS[k]} ${sign}`;
+  });
+  if (active.length === 0) return '0 / Neutro';
+  if (active.length <= 2) return active.join(', ');
+  return `${active.length} activos`;
+}
 export interface FieldEffects {
   tailwind: boolean;
   trickRoom: boolean;
@@ -1251,7 +1262,7 @@ function App() {
     } else if (lo >= hp) {
       koBadge = '¡KO seguro!';
       koCategory = 'ohko';
-      koIcon = '💥';
+      koIcon = '🪦';
       koFullDetail = '¡KO seguro en 1 golpe! (100% OHKO)';
       guaranteedHits = 1;
       minHits = 1;
@@ -1788,57 +1799,16 @@ function App() {
                     <ChevronRight size={13} />
                   </button>
 
-                  {/* Boosts integrados debajo del Atacante */}
-                  <div className="combatant-boosts-block" data-testid="panel-boosts-attacker">
-                    <div className="combatant-boosts-header">
-                      <span className="boosts-label">Boosts Atacante</span>
-                      <button
-                        type="button"
-                        className="boosts-reset-mini"
-                        title="Restablecer boosts a 0"
-                        onClick={() => resetCombatantBoosts(attacker.id)}
-                      >
-                        <RotateCcw size={9} />
-                        <span>0</span>
-                      </button>
-                    </div>
-                    <div className="combatant-boosts-grid">
-                      {STAGE_KEYS.map(key => {
-                        const val = attacker.boosts[key];
-                        return (
-                          <div className="combatant-boost-row" key={key}>
-                            <span className="boost-stat-name">{STAT_LABELS[key]}</span>
-                            <div className="boost-stepper">
-                              <button
-                                type="button"
-                                aria-label={`Bajar ${STAT_LABELS[key]} de atacante`}
-                                data-testid={`button-boost-down-attacker-${key}`}
-                                disabled={val <= -6}
-                                onClick={() => updateBoost(attacker.id, key, -1)}
-                              >
-                                <Minus size={9} />
-                              </button>
-                              <strong
-                                className={val > 0 ? 'pos' : val < 0 ? 'neg' : 'zero'}
-                                data-testid={`text-boost-attacker-${key}`}
-                              >
-                                {val > 0 ? `+${val}` : val}
-                              </strong>
-                              <button
-                                type="button"
-                                aria-label={`Subir ${STAT_LABELS[key]} de atacante`}
-                                data-testid={`button-boost-up-attacker-${key}`}
-                                disabled={val >= 6}
-                                onClick={() => updateBoost(attacker.id, key, 1)}
-                              >
-                                <Plus size={9} />
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
+                  {/* Botón para abrir Boosts del Atacante (mismo sistema de IV/EV) */}
+                  <button
+                    type="button"
+                    className="ivev-mini-btn"
+                    data-testid="button-open-attacker-boosts"
+                    onClick={() => setModal('boosts-attacker')}
+                  >
+                    <span>📈 Boosts ({formatBoostsSummary(attacker.boosts)})</span>
+                    <ChevronRight size={13} />
+                  </button>
 
                   {/* Opciones de estado debajo de los boosts (Atacante) */}
                   <div className="combatant-status-block" data-testid="panel-status-attacker">
@@ -2008,57 +1978,16 @@ function App() {
                     <ChevronRight size={13} />
                   </button>
 
-                  {/* Boosts integrados debajo del Defensor */}
-                  <div className="combatant-boosts-block" data-testid="panel-boosts-defender">
-                    <div className="combatant-boosts-header">
-                      <span className="boosts-label">Boosts Defensor</span>
-                      <button
-                        type="button"
-                        className="boosts-reset-mini"
-                        title="Restablecer boosts a 0"
-                        onClick={() => resetCombatantBoosts(defender.id)}
-                      >
-                        <RotateCcw size={9} />
-                        <span>0</span>
-                      </button>
-                    </div>
-                    <div className="combatant-boosts-grid">
-                      {STAGE_KEYS.map(key => {
-                        const val = defender.boosts[key];
-                        return (
-                          <div className="combatant-boost-row" key={key}>
-                            <span className="boost-stat-name">{STAT_LABELS[key]}</span>
-                            <div className="boost-stepper">
-                              <button
-                                type="button"
-                                aria-label={`Bajar ${STAT_LABELS[key]} de defensor`}
-                                data-testid={`button-boost-down-defender-${key}`}
-                                disabled={val <= -6}
-                                onClick={() => updateBoost(defender.id, key, -1)}
-                              >
-                                <Minus size={9} />
-                              </button>
-                              <strong
-                                className={val > 0 ? 'pos' : val < 0 ? 'neg' : 'zero'}
-                                data-testid={`text-boost-defender-${key}`}
-                              >
-                                {val > 0 ? `+${val}` : val}
-                              </strong>
-                              <button
-                                type="button"
-                                aria-label={`Subir ${STAT_LABELS[key]} de defensor`}
-                                data-testid={`button-boost-up-defender-${key}`}
-                                disabled={val >= 6}
-                                onClick={() => updateBoost(defender.id, key, 1)}
-                              >
-                                <Plus size={9} />
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
+                  {/* Botón para abrir Boosts del Defensor (mismo sistema de IV/EV) */}
+                  <button
+                    type="button"
+                    className="ivev-mini-btn"
+                    data-testid="button-open-defender-boosts"
+                    onClick={() => setModal('boosts-defender')}
+                  >
+                    <span>📈 Boosts ({formatBoostsSummary(defender.boosts)})</span>
+                    <ChevronRight size={13} />
+                  </button>
 
                   {/* Opciones de estado debajo de los boosts (Defensor) */}
                   <div className="combatant-status-block" data-testid="panel-status-defender">
@@ -2291,9 +2220,9 @@ function App() {
             </div>
           </section>
 
-          {/* 3. Movimiento (Standalone Move Card with Golpe Crítico option) */}
-          <section className="glass move-card !overflow-visible relative z-30" aria-label="Movimiento">
-            <div className="section-head">
+          {/* 3. Movimiento (Standalone Move Card with Golpe Crítico switch at top center) */}
+          <section className="glass move-card !overflow-visible relative z-0" aria-label="Movimiento">
+            <div className="section-head mb-1">
               <div className="flex items-center gap-2">
                 <span className="section-title">Movimiento</span>
                 {attacker && <span className="move-attacker-tag">({attacker.nombre})</span>}
@@ -2301,9 +2230,38 @@ function App() {
               <Swords size={15} color="#6d9290" />
             </div>
 
+            {/* Golpe crítico: switch sin explicación en la parte superior central con solo descriptivo 'Crítico' e icono de puño */}
+            <div className="flex items-center justify-center my-1.5">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={critical}
+                data-testid="checkbox-critical"
+                onClick={() => setCritical(v => !v)}
+                className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-slate-900/30 dark:bg-slate-900/70 border border-slate-700/50 hover:border-emerald-500/60 cursor-pointer select-none transition-all shadow-xs"
+              >
+                <span className="text-sm select-none" role="img" aria-label="Puño">👊</span>
+                <span className="text-xs font-bold tracking-wider text-slate-800 dark:text-slate-200 uppercase">
+                  Crítico
+                </span>
+                <span
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
+                    critical ? 'bg-emerald-500' : 'bg-slate-400 dark:bg-slate-600'
+                  }`}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                      critical ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  />
+                </span>
+              </button>
+            </div>
+
             <div className="move-card-body !overflow-visible relative">
               {/* Move Selection: Wide Predictive Search Bar with Type Color and Full Name */}
-              <div className="w-full mb-2 relative z-40">
+              <div className="w-full mb-1 relative">
                 <MoveSearchableSelect
                   id="move-choice"
                   label="Ataque del Atacante"
@@ -2318,29 +2276,6 @@ function App() {
                     }
                   }}
                 />
-              </div>
-
-              {/* Option: Golpe Crítico */}
-              <div className="move-crit-row">
-                <button
-                  type="button"
-                  className={`crit-toggle-btn ${critical ? 'active' : ''}`}
-                  data-testid="checkbox-critical"
-                  onClick={() => setCritical(v => !v)}
-                >
-                  <div className="crit-toggle-icon">💥</div>
-                  <div className="crit-toggle-info">
-                    <div className="flex items-center gap-2">
-                      <strong className="crit-title">Golpe crítico</strong>
-                      <span className={`crit-badge ${critical ? 'active' : ''}`}>
-                        {critical ? 'ACTIVADO' : 'DESACTIVADO'}
-                      </span>
-                    </div>
-                    <small className="crit-desc">
-                      {attackerAbility === 'sniper' ? '×2,25 con Francotirador' : '×1,5 de daño base'} · Ignora pantallas y defensas aumentadas
-                    </small>
-                  </div>
-                </button>
               </div>
 
               {/* Post-Move Stat Change (e.g. Draco Meteor, Close Combat) */}
@@ -2374,56 +2309,39 @@ function App() {
         <div className="flex flex-col gap-3">
           {/* UNIFIED CARD (DAÑO Y VELOCIDAD FUSIONADOS) */}
           <section className="glass unified-outcome-card" aria-label="Resultado de batalla">
-            <div className="section-head">
+            <div className="section-head mb-2">
+              <span className="section-title text-emerald-100 font-bold text-xs uppercase tracking-wider">
+                Daño y velocidad
+              </span>
               <div className="flex items-center gap-2">
-                <span className="section-title text-emerald-100">Resultado • Daño & Velocidad</span>
-                <span className="ko-badge" data-testid="status-ko">
-                  {koChance}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Zap size={15} className="text-amber-400" />
-                <Swords size={15} className="text-emerald-300" />
+                <Zap size={18} className="text-amber-400 fill-amber-400" title="Relámpago / Velocidad" />
+                {/* Persona vendada */}
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="text-emerald-300"
+                  title="Persona vendada"
+                  role="img"
+                  aria-label="Persona vendada"
+                >
+                  <circle cx="12" cy="7" r="4" />
+                  <path d="M9 5l6 4" strokeWidth="2.2" stroke="#f43f5e" />
+                  <path d="M5.5 21v-2a6.5 6.5 0 0 1 13 0v2" />
+                  <path d="M8 17l8-4" strokeWidth="2" stroke="#f43f5e" />
+                </svg>
               </div>
             </div>
 
-            {/* BLOCK A: SPEED & TURN ORDER */}
+            {/* BLOCK A: SPEED COMPARISON BARS */}
             {speedCalc && attacker && defender && (
-              <div>
-                <div className="outcome-subhead">
-                  <Zap size={13} className="text-amber-300" />
-                  <span>Orden de turno y velocidad</span>
-                </div>
-
-                <div
-                  className={`speed-banner ${
-                    speedCalc.movePriority !== 0
-                      ? 'priority-active'
-                      : speedCalc.winner === 'attacker'
-                      ? ''
-                      : speedCalc.winner === 'defender'
-                      ? 'defender-first'
-                      : 'speed-tie'
-                  }`}
-                  data-testid="banner-speed-winner"
-                >
-                  <div className="speed-banner-icon">
-                    {speedCalc.winner === 'attacker' ? (
-                      <Zap size={18} className="text-amber-500 animate-pulse" />
-                    ) : speedCalc.winner === 'defender' ? (
-                      <Shield size={18} className="text-blue-500" />
-                    ) : (
-                      <Swords size={18} className="text-yellow-600" />
-                    )}
-                  </div>
-                  <div className="speed-banner-content">
-                    <strong>{speedCalc.headline}</strong>
-                    <small>{speedCalc.detail}</small>
-                  </div>
-                </div>
-
-                {/* Comparative Speed Bars */}
-                <div className="speed-comparison-bars">
+              <div className="speed-comparison-bars">
                   <div className="speed-row">
                     <span className="speed-name">{attacker.nombre}</span>
                     <div className="speed-bar-track">
@@ -2446,7 +2364,6 @@ function App() {
                     <span className="speed-val">{speedCalc.finalDefenderSpe} Vel</span>
                   </div>
                 </div>
-              </div>
             )}
 
             <div className="outcome-divider" />
@@ -2516,7 +2433,26 @@ function App() {
 
                   {/* Especificar si es KO y cuántos golpes para KO seguro */}
                   <div className={`photo-ko-banner ${calc.koCategory}`} data-testid="banner-photo-ko-status">
-                    <span>{calc.koIcon}</span>
+                    {calc.koCategory === 'ohko' ? (
+                      <span className="inline-flex items-center gap-1 text-sm" title="KO">
+                        {/* Tumba SVG */}
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="currentColor"
+                          className="text-rose-300 shrink-0"
+                          role="img"
+                          aria-label="Tumba"
+                        >
+                          <path d="M12 2C7.58 2 4 5.58 4 10v10h16V10c0-4.42-3.58-8-8-8zm1 5v3h3v2h-3v5h-2v-5H8v-2h3V7h2z" />
+                          <path d="M2 20h20v2H2z" />
+                        </svg>
+                      </span>
+                    ) : (
+                      <span>{calc.koIcon}</span>
+                    )}
                     <span>{calc.koFullDetail}</span>
                   </div>
                 </div>
@@ -2789,6 +2725,10 @@ function App() {
                     ? `Modificar IV/EV · ${attacker?.nombre || 'Atacante'}`
                     : modal === 'ivev-defender'
                     ? `Modificar IV/EV · ${defender?.nombre || 'Defensor'}`
+                    : modal === 'boosts-attacker'
+                    ? `Modificar Boosts · ${attacker?.nombre || 'Atacante'}`
+                    : modal === 'boosts-defender'
+                    ? `Modificar Boosts · ${defender?.nombre || 'Defensor'}`
                     : 'Instalación Offline & APK'}
                 </h2>
               </div>
@@ -3027,6 +2967,313 @@ function App() {
                     <span className="text-red-500 font-bold">¡Límite superado!</span>
                   )}
                 </div>
+
+                <button type="button" className="btn btn-primary mt-2" onClick={() => setModal(null)}>
+                  Listo / Guardar
+                </button>
+              </div>
+            )}
+
+            {/* DEDICATED MODAL FOR ATTACKER BOOSTS (Mismo sistema de IV/EV) */}
+            {modal === 'boosts-attacker' && attacker && (
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
+                  <span className="font-bold text-sm text-slate-800 dark:text-slate-100">
+                    {attacker.nombre} (Nv. {attackerLevel}) · Boosts de Atacante
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <TypeBadge type={attacker.tipo1} size="sm" />
+                    {attacker.tipo2 && <TypeBadge type={attacker.tipo2} size="sm" />}
+                  </div>
+                </div>
+
+                <div className="ivev-presets">
+                  <button
+                    type="button"
+                    className="preset-btn"
+                    onClick={() => {
+                      resetCombatantBoosts(attacker.id);
+                      setToast('Boosts de atacante restablecidos a 0.');
+                    }}
+                  >
+                    Reset a 0
+                  </button>
+                  <button
+                    type="button"
+                    className="preset-btn"
+                    onClick={() => {
+                      updateBoost(attacker.id, 'atk', 2);
+                      setToast('+2 Ataque (Danza Espada).');
+                    }}
+                  >
+                    +2 Atq (D. Espada)
+                  </button>
+                  <button
+                    type="button"
+                    className="preset-btn"
+                    onClick={() => {
+                      updateBoost(attacker.id, 'spa', 2);
+                      setToast('+2 Atq. Esp. (Maquinación).');
+                    }}
+                  >
+                    +2 SpA (Maquinación)
+                  </button>
+                  <button
+                    type="button"
+                    className="preset-btn"
+                    onClick={() => {
+                      updateBoost(attacker.id, 'atk', 1);
+                      updateBoost(attacker.id, 'spe', 1);
+                      setToast('+1 Atq / +1 Vel (D. Dragón).');
+                    }}
+                  >
+                    +1 Atq / +1 Vel (D. Dragón)
+                  </button>
+                  <button
+                    type="button"
+                    className="preset-btn"
+                    onClick={() => {
+                      updateBoost(attacker.id, 'spe', 2);
+                      setToast('+2 Velocidad (Agilidad).');
+                    }}
+                  >
+                    +2 Vel (Agilidad)
+                  </button>
+                  <button
+                    type="button"
+                    className="preset-btn"
+                    onClick={() => {
+                      updateBoost(attacker.id, 'atk', -1);
+                      setToast('-1 Ataque (Intimidación).');
+                    }}
+                  >
+                    -1 Atq (Intimidación)
+                  </button>
+                  <button
+                    type="button"
+                    className="preset-btn"
+                    onClick={() => {
+                      updateBoost(attacker.id, 'def', 1);
+                      updateBoost(attacker.id, 'spd', 1);
+                      setToast('+1 Def / +1 SpD (Cósmico).');
+                    }}
+                  >
+                    +1 Def / +1 SpD (Cósmico)
+                  </button>
+                </div>
+
+                <table className="ivev-table">
+                  <thead>
+                    <tr>
+                      <th>Estadística</th>
+                      <th>Boost (-6 a +6)</th>
+                      <th>Multiplicador</th>
+                      <th>Ajuste rápido</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {STAGE_KEYS.map(key => {
+                      const val = attacker.boosts[key];
+                      const mult =
+                        val > 0
+                          ? `${((2 + val) / 2).toFixed(2).replace(/\.00$/, '')}×`
+                          : val < 0
+                          ? `${(2 / (2 - val)).toFixed(2).replace(/\.00$/, '')}×`
+                          : '1×';
+
+                      return (
+                        <tr key={key}>
+                          <td className="ivev-stat-name">{STAT_LABELS[key]}</td>
+                          <td>
+                            <strong
+                              className={`font-mono text-sm ${
+                                val > 0 ? 'text-emerald-500' : val < 0 ? 'text-rose-500' : 'text-slate-500'
+                              }`}
+                            >
+                              {val > 0 ? `+${val}` : val}
+                            </strong>
+                          </td>
+                          <td className="font-mono text-xs text-slate-600 dark:text-slate-300">
+                            {mult}
+                          </td>
+                          <td>
+                            <div className="flex items-center gap-1 justify-center">
+                              <button
+                                type="button"
+                                className="w-7 h-7 rounded-md bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 flex items-center justify-center font-bold text-xs"
+                                disabled={val <= -6}
+                                onClick={() => updateBoost(attacker.id, key, -1)}
+                              >
+                                <Minus size={12} />
+                              </button>
+                              <button
+                                type="button"
+                                className="w-7 h-7 rounded-md bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 flex items-center justify-center font-bold text-xs"
+                                disabled={val >= 6}
+                                onClick={() => updateBoost(attacker.id, key, 1)}
+                              >
+                                <Plus size={12} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+
+                <button type="button" className="btn btn-primary mt-2" onClick={() => setModal(null)}>
+                  Listo / Guardar
+                </button>
+              </div>
+            )}
+
+            {/* DEDICATED MODAL FOR DEFENDER BOOSTS (Mismo sistema de IV/EV) */}
+            {modal === 'boosts-defender' && defender && (
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
+                  <span className="font-bold text-sm text-slate-800 dark:text-slate-100">
+                    {defender.nombre} (Nv. {defenderLevel}) · Boosts de Defensor
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <TypeBadge type={defender.tipo1} size="sm" />
+                    {defender.tipo2 && <TypeBadge type={defender.tipo2} size="sm" />}
+                  </div>
+                </div>
+
+                <div className="ivev-presets">
+                  <button
+                    type="button"
+                    className="preset-btn"
+                    onClick={() => {
+                      resetCombatantBoosts(defender.id);
+                      setToast('Boosts de defensor restablecidos a 0.');
+                    }}
+                  >
+                    Reset a 0
+                  </button>
+                  <button
+                    type="button"
+                    className="preset-btn"
+                    onClick={() => {
+                      updateBoost(defender.id, 'def', 2);
+                      setToast('+2 Defensa (Defensa Férrea).');
+                    }}
+                  >
+                    +2 Def (D. Férrea)
+                  </button>
+                  <button
+                    type="button"
+                    className="preset-btn"
+                    onClick={() => {
+                      updateBoost(defender.id, 'spd', 2);
+                      setToast('+2 Def. Esp. (Amnesia).');
+                    }}
+                  >
+                    +2 SpD (Amnesia)
+                  </button>
+                  <button
+                    type="button"
+                    className="preset-btn"
+                    onClick={() => {
+                      updateBoost(defender.id, 'def', 1);
+                      updateBoost(defender.id, 'spd', 1);
+                      setToast('+1 Def / +1 SpD (Cósmico).');
+                    }}
+                  >
+                    +1 Def / +1 SpD (Cósmico)
+                  </button>
+                  <button
+                    type="button"
+                    className="preset-btn"
+                    onClick={() => {
+                      updateBoost(defender.id, 'def', 1);
+                      setToast('+1 Defensa.');
+                    }}
+                  >
+                    +1 Def
+                  </button>
+                  <button
+                    type="button"
+                    className="preset-btn"
+                    onClick={() => {
+                      updateBoost(defender.id, 'spd', 1);
+                      setToast('+1 Def. Esp.');
+                    }}
+                  >
+                    +1 SpD
+                  </button>
+                  <button
+                    type="button"
+                    className="preset-btn"
+                    onClick={() => {
+                      updateBoost(defender.id, 'spe', 1);
+                      setToast('+1 Velocidad.');
+                    }}
+                  >
+                    +1 Vel
+                  </button>
+                </div>
+
+                <table className="ivev-table">
+                  <thead>
+                    <tr>
+                      <th>Estadística</th>
+                      <th>Boost (-6 a +6)</th>
+                      <th>Multiplicador</th>
+                      <th>Ajuste rápido</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {STAGE_KEYS.map(key => {
+                      const val = defender.boosts[key];
+                      const mult =
+                        val > 0
+                          ? `${((2 + val) / 2).toFixed(2).replace(/\.00$/, '')}×`
+                          : val < 0
+                          ? `${(2 / (2 - val)).toFixed(2).replace(/\.00$/, '')}×`
+                          : '1×';
+
+                      return (
+                        <tr key={key}>
+                          <td className="ivev-stat-name">{STAT_LABELS[key]}</td>
+                          <td>
+                            <strong
+                              className={`font-mono text-sm ${
+                                val > 0 ? 'text-emerald-500' : val < 0 ? 'text-rose-500' : 'text-slate-500'
+                              }`}
+                            >
+                              {val > 0 ? `+${val}` : val}
+                            </strong>
+                          </td>
+                          <td className="font-mono text-xs text-slate-600 dark:text-slate-300">
+                            {mult}
+                          </td>
+                          <td>
+                            <div className="flex items-center gap-1 justify-center">
+                              <button
+                                type="button"
+                                className="w-7 h-7 rounded-md bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 flex items-center justify-center font-bold text-xs"
+                                disabled={val <= -6}
+                                onClick={() => updateBoost(defender.id, key, -1)}
+                              >
+                                <Minus size={12} />
+                              </button>
+                              <button
+                                type="button"
+                                className="w-7 h-7 rounded-md bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 flex items-center justify-center font-bold text-xs"
+                                disabled={val >= 6}
+                                onClick={() => updateBoost(defender.id, key, 1)}
+                              >
+                                <Plus size={12} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
 
                 <button type="button" className="btn btn-primary mt-2" onClick={() => setModal(null)}>
                   Listo / Guardar

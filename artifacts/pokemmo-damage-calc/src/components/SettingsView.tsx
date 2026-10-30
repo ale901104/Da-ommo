@@ -107,6 +107,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       </section>
 
+      {/* SECTION: ASOCIAR GMAIL */}
+      <GoogleAccountSection onToast={onToast} />
+
       {/* SECTION 2: PERSONALIZACIÓN DE FONDO */}
       <section className="glass combat-card" aria-label="Personalización de fondo">
         <div className="section-head mb-3">
@@ -208,6 +211,89 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {/* SECTION 3: AI PROVIDER CONFIGURATION (GEMINI, OPENAI, GROQ) */}
       <AiProviderSection onToast={onToast} />
     </div>
+  );
+};
+
+export const GoogleAccountSection: React.FC<{ onToast: (msg: string) => void }> = ({ onToast }) => {
+  const [googleUser, setGoogleUser] = useState<User | null>(() => getCurrentGoogleUser());
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+
+  useEffect(() => {
+    initDriveAuth(u => {
+      setGoogleUser(u);
+    });
+  }, []);
+
+  const handleConnect = async () => {
+    setIsLoading(true);
+    try {
+      const res = await signInWithGoogle();
+      if (res?.user) {
+        setGoogleUser(res.user);
+        onToast(`Gmail asociado: ${res.user.email}`);
+      }
+    } catch (err: unknown) {
+      onToast(err instanceof Error ? err.message : 'Error al asociar cuenta de Google');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    setIsLoading(true);
+    try {
+      await signOutGoogle();
+      setGoogleUser(null);
+      onToast('Cuenta de Gmail desvinculada.');
+    } catch {
+      onToast('Error al desvincular cuenta.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <section className="glass combat-card" aria-label="Cuenta de Gmail">
+      <div className="flex items-center justify-between py-1">
+        <div className="flex items-center gap-2.5">
+          <div className="p-2 rounded-xl border bg-rose-950/70 border-rose-700/60 text-rose-300">
+            <Mail size={18} />
+          </div>
+          <div className="flex flex-col">
+            <span className="text-sm font-bold text-white">Cuenta de Gmail</span>
+            {googleUser ? (
+              <span className="text-xs text-slate-300 font-mono truncate max-w-[200px] sm:max-w-xs">
+                {googleUser.email}
+              </span>
+            ) : (
+              <span className="text-xs text-slate-400">Sin cuenta asociada</span>
+            )}
+          </div>
+        </div>
+
+        {googleUser ? (
+          <button
+            type="button"
+            onClick={handleDisconnect}
+            disabled={isLoading}
+            className="flex items-center gap-1.5 py-1.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs font-semibold transition-colors cursor-pointer"
+          >
+            {isLoading ? <Loader2 size={13} className="animate-spin" /> : <LogOut size={13} />}
+            <span>Desvincular</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={handleConnect}
+            disabled={isLoading}
+            className="flex items-center gap-1.5 py-1.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow transition-all cursor-pointer"
+          >
+            {isLoading ? <Loader2 size={13} className="animate-spin" /> : <Mail size={13} />}
+            <span>Vincular Gmail</span>
+          </button>
+        )}
+      </div>
+    </section>
   );
 };
 

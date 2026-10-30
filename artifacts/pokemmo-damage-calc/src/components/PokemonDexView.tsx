@@ -327,7 +327,7 @@ export const PokemonDexView: React.FC<PokemonDexViewProps> = ({
           return (
             <div
               key={rawPk.id}
-              className="glass p-3 rounded-xl flex flex-col justify-between border border-slate-700/40 hover:border-slate-600 transition-all"
+              className="glass p-3 rounded-xl flex flex-col justify-between border border-slate-700/80 dark:bg-slate-900/85 hover:border-slate-500 shadow-md transition-all"
             >
               <div>
                 <div className="flex items-center justify-between mb-1.5">
